@@ -129,7 +129,50 @@ state Spectating extends BaseSpectating
   `TeamGame` sets it `True` in defaultproperties (TeamGame.uc:1693), DM leaves
   it False. TDM/CTF/BR/DOM/ONS/AS all derive from TeamGame → True.
 
-## 6. Environment of this install
+## 6. How bots respawn (and how to delay them)
+
+* `Controller.PawnDied()` puts *bots* (bIsPlayer=true) in `state Dead` too.
+* `Bot.state Dead` (UnrealGame/Bot.uc:5023) is a respawn loop:
+  `Sleep(0.25 + UnrealMPGameInfo.SpawnWait(self)) → Level.Game.ReStartPlayer(self) → Goto('TryAgain')`.
+  `SpawnWait` (UnrealGame/UnrealMPGameInfo.uc:253) is tiny in netgames
+  (0…1 s, 0 for bPlayersVsBots) — hence "bots respawn almost instantly".
+  `SpawnWait` is a GameInfo method, not overridable from a mutator.
+  The loop calls `RestartPlayer` **directly** — there is no `PlayerCanRestart`
+  gate for bots, so GameRules/mutators cannot veto the vanilla bot respawn.
+* How the bot *leaves* `state Dead`: `GameInfo.RestartPlayer → Possess →
+  Restart()`, and **`Bot.Restart()` (UnrealGame/Bot.uc:1979) does
+  `GotoState('Roaming','DoneRoaming')`** — that is the whole vanilla escape
+  from Dead; no extra code is needed to re-activate a bot after a foreign
+  `RestartPlayer()` call.
+* Because bots self-restart at ~0.5 s, delaying one means *moving it out of its
+  own loop*: the mutator parks the dying bot in the passive controller state
+  **`RoundEnded`** (a Controller state that does nothing but exist — vanilla
+  uses it at round end in Assault; `BeginState()` only unpossesses a live pawn,
+  which a dead bot does not have). Latent actions of the abandoned `state Dead`
+  loop are dropped when a foreign `GotoState` happens.
+* A freshly added bot also sits in `state Dead` (DeathMatch.AddBot:
+  `GotoState('Dead','MPStart')` for net games) *before* ever spawning.
+  `Controller.PreviousPawnClass` (Engine/Controller.uc) is only set inside
+  `GameInfo.RestartPlayer`, so it cleanly distinguishes "added, waiting for
+  match start" from "died once".
+* Failure safety: if `RestartPlayer` keeps failing (round over, no spawn
+  spots, ...), the bot is put back into `state Dead` after ~10 retries so its
+  own loop takes over again; humans get the same escape hatch after ~30 tries.
+
+## 7. HUD localized-message lifecycle ("frozen number" bug)
+
+`HudBase.DisplayLocalMessages` (XInterface/HudBase.uc:600-680) iterates the
+client's `LocalMessages[]` in two passes. Pass 1 culls expired entries **only
+if `Message.default.bFadeMessage` is true**; an expired non-fade message keeps
+being drawn by pass 2 (`DrawMessage` never re-checks `EndOfLife`). A countdown
+LocalMessage without `bFadeMessage` therefore stays on screen forever once its
+`LifeTime` has elapsed (until enough new messages shuffle it out) — exactly the
+reported "frozen number that only disappears when you die". Fix:
+`bFadeMessage=True` on the countdown class *and* an explicit "clear" pulse
+(`Switch < 0`, GetString returns an empty string) sent by the mutator whenever
+a waiting player's entry is dropped.
+
+## 8. Environment of this install
 
 * Windows build running through wine 11.20-staging; `wine UCC.exe make` works
   (cwd = game `System/`).
@@ -141,3 +184,12 @@ state Spectating extends BaseSpectating
 * There were no source files for the failed attempt anywhere in the game tree
   (only the stale `RespawnDelay.u/.int/.ucl` in System) — nothing to salvage.
   The old build was a fixed-delay mutator ("DelaySeconds=5", `mutate setdelay`).
+* Mutator config lives in **UT2004.ini** (`class ... config(UT2004)`); an
+  earlier `config(RespawnDelay)` declaration silently read a nonexistent
+  `RespawnDelay.ini` instead, which is why appended UT2004.ini sections had no
+  effect for a while.
+* A dedicated server started headless (`ucc server MAP?...`) **never leaves
+  `state PendingMatch` without a connected human**:
+  `DeathMatch.state PendingMatch.Timer` does `if (NumPlayers == 0)
+  bWaitForNetPlayers = true;` every tick, regardless of `MinPlayers`/bots.
+  So foreign-bot smoke tests must be done with a real client connected.

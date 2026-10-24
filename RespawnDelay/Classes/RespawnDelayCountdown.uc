@@ -10,10 +10,15 @@
 //                            (single clean line that ticks 10, 9, 8, ...)
 //  - bIsConsoleMessage=False -> never written to the chat/console area,
 //                            other players never see it
+//  - bFadeMessage=True    -> the HUD culls the line once its LifeTime is over
+//                            (without this an expired line would sit on the
+//                            screen forever - the "frozen number" bug)
 //  - bBeep=False          -> silence
 //
 // Switch encodes the seconds remaining (the mutator emits one message per
-// whole second while the player waits).
+// whole second while the player waits). Switch < 0 is the "clear" pulse: the
+// mutator sends it whenever a waiting entry is dropped, so a stale number can
+// never outlive the wait (GetString returns an empty string for it).
 //=============================================================================
 class RespawnDelayCountdown extends LocalMessage;
 
@@ -31,6 +36,9 @@ static function string GetString(
 	optional Object OptionalObject
 	)
 {
+	if ( Switch < 0 )
+		return "";						// "clear" pulse: renders nothing
+
 	if ( Switch <= 0 )
 		return Default.FinalLabel;
 
@@ -41,25 +49,7 @@ static function string GetString(
 // Look & feel
 // ---------------------------------------------------------------------------
 
-static function color GetColor(
-	optional int Switch,
-	optional PlayerReplicationInfo RelatedPRI_1,
-	optional PlayerReplicationInfo RelatedPRI_2
-	)
-{
-	local color C;
-
-	C = Default.DrawColor;
-
-	// last three seconds light up red
-	if ( Switch <= 3 )
-	{
-		C.R = 255;
-		C.G = 40;
-		C.B = 40;
-	}
-	return C;
-}
+// always white: no GetColor override; DrawColor below is pure white
 
 static function int GetFontSize(
 	int Switch,
@@ -88,6 +78,7 @@ defaultproperties
 	bIsSpecial=True
 	bIsUnique=True
 	bIsConsoleMessage=False
+	bFadeMessage=True
 	bBeep=False
 
 	Lifetime=1.25
@@ -96,5 +87,5 @@ defaultproperties
 	PosY=0.720000
 	DrawPivot=DP_MiddleMiddle
 	StackMode=SM_None
-	DrawColor=(R=255,G=200,B=32,A=255)
+	DrawColor=(R=255,G=255,B=255,A=255)
 }

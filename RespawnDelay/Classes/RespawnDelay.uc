@@ -15,7 +15,14 @@
 //      last anchor. The value is computed ONCE (at death) and "set in
 //      stone" until the player respawns.
 //
-//  * Non team modes (DM, LMS, ...): fixed BaseDelay (default 3 seconds).
+//  * Non team modes (DM, LMS, ...): fixed BaseDelay (default 5 seconds).
+//
+//  * Bots are delayed the same way (config AffectBots): a dying bot is parked
+//    in the passive controller state 'RoundEnded' (it just idles there, like
+//    when an Assault round ends) and GameInfo.RestartPlayer() is called at the
+//    locked time. Possess -> Restart() -> Bot.Restart() then drops it straight
+//    into 'Roaming', i.e. the exact vanilla wake-up path. Respawnless game
+//    modes (Invasion's bOutOfLives waves) are excluded (AffectInvasion).
 //
 //  * While waiting, players are put in the vanilla 'Spectating' state:
 //      FIRE            cycles the camera through the players allowed by the
@@ -40,10 +47,14 @@
 //       for Last Man Standing, via UnrealPlayer.ServerSpectate).
 //    3. When the locked respawn time is reached, the supervisor calls
 //       GameInfo.PlayerCanRestart() and GameInfo.RestartPlayer(), i.e. the
-//       exact vanilla respawn routine.
+//       exact vanilla respawn routine (bots get RestartPlayer() directly,
+//       exactly what vanilla Bot "state Dead" does).
+//    4. Every waiting entry is dropped the moment the condition changes and a
+//       stale HUD countdown is killed with a "clear" localized message
+//       (Switch < 0 renders an empty string), so no number can outlive a wait.
 //=============================================================================
 class RespawnDelay extends Mutator
-	config(RespawnDelay);
+	config(UT2004);
 
 // ---------------------------------------------------------------------------
 // Configuration (UT2004.ini section [RespawnDelay.RespawnDelay])
@@ -74,6 +85,13 @@ var() config bool	TeamFormula;
 var() config bool	Countdown;
 
 /**
+ * Apply the delay to bots as well. The dying bot is parked in the passive
+ * 'RoundEnded' controller state until its delay runs out, then spawned with
+ * the vanilla GameInfo.RestartPlayer().
+ */
+var() config bool	AffectBots;
+
+/**
  * Invasion respawns by wave and the game itself keeps dead players waiting.
  * Leave disabled unless the delay should pile up on top of the wave logic.
  */
@@ -92,15 +110,17 @@ var localized string	MsgStatusIdle;
 // Internal state
 // ---------------------------------------------------------------------------
 
-// one entry per player currently sitting out the delay
+// one entry per controller (human or bot) currently sitting out the delay
 struct TWaitingPlayer
 {
-	var PlayerController	PC;
+	var Controller			C;			// PlayerController or Bot
+	var bool				bBot;
 	var float				DiedAt;		// server time of the detected death
 	var float				RespawnAt;	// locked respawn time
 	var int					AlliesAlive;// snapshot taken at death
 	var float				LastAttempt;// last RestartPlayer attempt (rate limiter)
-	var int					LastCountdown;	// whole seconds already displayed
+	var int					Tries;		// failed RestartPlayer attempts
+	var int					LastCountdown;	// whole seconds already displayed (-1 = none yet, -2 = cleared)
 };
 
 var array<TWaitingPlayer>	Waiting;
@@ -187,24 +207,24 @@ function ParseDelayTable()
 // ---------------------------------------------------------------------------
 
 /**
- * The delay for the death of PC, evaluated with the CURRENT number of allies
+ * The delay for the death of C, evaluated with the CURRENT number of allies
  * alive. Called exactly once per death; the result is locked until respawn.
  */
-function float RespawnDelayFor(PlayerController PC)
+function float RespawnDelayFor(Controller C)
 {
 	if ( Level.Game != None && Level.Game.bTeamGame && TeamFormula )
-		return TeamRespawnDelay(PC);
+		return TeamRespawnDelay(C);
 
 	return BaseDelay;
 }
 
-function float TeamRespawnDelay(PlayerController PC)
+function float TeamRespawnDelay(Controller C)
 {
 	local int N;
 	local int i;
 	local float N0, D0, N1, D1;
 
-	N = CountAliveAllies(PC);
+	N = CountAliveAllies(C);
 
 	// before the first anchor / no curve
 	if ( N <= CurveN[0] )
@@ -263,6 +283,7 @@ function Timer()
 {
 	local Controller			C;
 	local PlayerController		PC;
+	local Bot					B;
 	local int					i, Secs;
 
 	if ( !Enabled )
@@ -275,20 +296,66 @@ function Timer()
 		return;
 	}
 
-	// --- 1) players that are waiting ----------------------------------------
+	// --- 1) controllers that are waiting ------------------------------------
 	for ( i = Waiting.Length - 1; i >= 0; i-- )
 	{
-		PC = Waiting[i].PC;
+		C = Waiting[i].C;
 
 		// gone
-		if ( PC == None || PC.bDeleteMe )
+		if ( C == None || C.bDeleteMe )
 		{
 			Waiting.Remove(i, 1);
 			continue;
 		}
 
-		//respawned or taken over by the game (round end, MaxLives, invasion wave ...)
-		if ( PC.Pawn != None || PC.PlayerReplicationInfo.bOutOfLives )
+		// respawned or taken over by the game (round end, MaxLives, invasion wave ...)
+		if ( C.Pawn != None || C.PlayerReplicationInfo == None || C.PlayerReplicationInfo.bOutOfLives )
+		{
+			// a bot parked by us must go back to the vanilla machine
+			B = Bot(C);
+			if ( B != None && C.Pawn == None )
+				B.GotoState('Dead');
+			ClearCountdown(i);
+			Waiting.Remove(i, 1);
+			continue;
+		}
+
+		if ( Waiting[i].bBot )
+		{
+			B = Bot(C);
+
+			// the game moved the bot out of our parking spot (round
+			// transition, ...): hand it back and trust vanilla
+			if ( !B.IsInState('RoundEnded') && !B.IsInState('Dead') )
+			{
+				B.GotoState('Dead');
+				Waiting.Remove(i, 1);
+				continue;
+			}
+
+			// time up -> vanilla respawn routine (what Bot "state Dead" does)
+			if ( Level.TimeSeconds >= Waiting[i].RespawnAt
+				&& !Level.Game.bWaitingToStartMatch
+				&& Level.TimeSeconds - Waiting[i].LastAttempt > 0.5 )
+			{
+				Waiting[i].LastAttempt	= Level.TimeSeconds;
+				Waiting[i].Tries		+= 1;
+				Level.Game.RestartPlayer(C);
+
+				// respawn keeps failing (round over, no spawn spots, ...):
+				// restore the bot's own dead loop
+				if ( Waiting[i].Tries > 10 )
+				{
+					B.GotoState('Dead');
+					Waiting.Remove(i, 1);
+				}
+			}
+			continue;
+		}
+
+		// below only humans
+		PC = PlayerController(C);
+		if ( PC == None )
 		{
 			Waiting.Remove(i, 1);
 			continue;
@@ -297,6 +364,7 @@ function Timer()
 		// match/round machinery moved the controller (state 'RoundEnded', ...)
 		if ( !PC.IsInState('Dead') && !PC.IsInState('Spectating') )
 		{
+			ClearCountdown(i);
 			Waiting.Remove(i, 1);
 			continue;
 		}
@@ -319,10 +387,20 @@ function Timer()
 				&& !Level.Game.bWaitingToStartMatch
 				&& Level.TimeSeconds - Waiting[i].LastAttempt > 0.5 )
 			{
-				Waiting[i].LastAttempt = Level.TimeSeconds;
+				Waiting[i].LastAttempt	= Level.TimeSeconds;
+				Waiting[i].Tries		+= 1;
 				if ( Level.Game.PlayerCanRestart(PC) )
 					Level.Game.RestartPlayer(PC);
 				// entry is dropped automatically once PC.Pawn != None
+
+				// respawn keeps failing (must join before start, ...):
+				// hand back to the vanilla dead state
+				if ( Waiting[i].Tries > 30 )
+				{
+					ClearCountdown(i);
+					PC.GotoState('Dead');
+					Waiting.Remove(i, 1);
+				}
 			}
 		}
 		else if ( Level.TimeSeconds - Waiting[i].DiedAt >= DeathCamTime )
@@ -335,52 +413,93 @@ function Timer()
 	// --- 2) look for fresh deaths --------------------------------------------
 	for ( C = Level.ControllerList; C != None; C = C.NextController )
 	{
-		PC = PlayerController(C);
-		if ( PC == None || PC.bDeleteMe || PC.PlayerReplicationInfo == None )
+		if ( C.bDeleteMe || C.PlayerReplicationInfo == None || !C.bIsPlayer )
 			continue;
-		if ( PC.PlayerReplicationInfo.bOnlySpectator )
+		if ( C.PlayerReplicationInfo.bOnlySpectator )
 			continue;
-		if ( PC.PlayerReplicationInfo.bOutOfLives )
+		if ( C.PlayerReplicationInfo.bOutOfLives )
 			continue;
-		if ( !PC.IsInState('Dead') || PC.Pawn != None )
+		if ( C.Pawn != None )
 			continue;
-		if ( GetWaitingIndex(PC) >= 0 )
+		if ( GetWaitingIndex(C) >= 0 )
 			continue;
 		if ( Level.Game.IsA('Invasion') && !AffectInvasion )
 			continue;
 
-		RegisterDeath(PC);
+		PC = PlayerController(C);
+		if ( PC != None )
+		{
+			if ( PC.IsInState('Dead') )
+				RegisterDeath(PC);
+			continue;
+		}
+
+		B = Bot(C);
+		if ( B != None && AffectBots )
+		{
+			// a bot sits in "state Dead" both right after AddBot (waiting for
+			// the match to start) and after its death. PreviousPawnClass is
+			// only set once it has actually spawned, so it filters out the
+			// match-start case.
+			if ( B.IsInState('Dead') && B.PreviousPawnClass != None )
+				RegisterDeath(B);
+		}
 	}
 }
 
-function int GetWaitingIndex(PlayerController PC)
+function int GetWaitingIndex(Controller C)
 {
 	local int i;
 
 	for ( i = 0; i < Waiting.Length; i++ )
-		if ( Waiting[i].PC == PC )
+		if ( Waiting[i].C == C )
 			return i;
 	return -1;
 }
 
-function RegisterDeath(PlayerController PC)
+function RegisterDeath(Controller C)
 {
-	local TWaitingPlayer W;
+	local TWaitingPlayer	W;
+	local PlayerController	PC;
 
-	W.PC			= PC;
+	W.C				= C;
+	W.bBot			= (Bot(C) != None);
 	W.DiedAt		= Level.TimeSeconds;
 	W.LastAttempt	= 0.0;
+	W.Tries			= 0;
 	W.LastCountdown	= -1;		// forces the first countdown pulse immediately
-	W.AlliesAlive	= CountAliveAllies(PC);
-	W.RespawnAt		= Level.TimeSeconds + RespawnDelayFor(PC);
+	W.AlliesAlive	= CountAliveAllies(C);
+	W.RespawnAt		= Level.TimeSeconds + RespawnDelayFor(C);
 
 	Waiting[Waiting.Length] = W;
 
 	// announce the locked delay
-	if ( Level.Game.bTeamGame && TeamFormula )
-		PC.ClientMessage(FillFormat2(MsgRespawnTeam, string(W.RespawnAt - W.DiedAt), string(W.AlliesAlive)));
-	else
-		PC.ClientMessage(FillFormat(MsgRespawnSolo, string(W.RespawnAt - W.DiedAt)));
+	PC = PlayerController(C);
+	if ( PC != None )
+	{
+		if ( Level.Game.bTeamGame && TeamFormula )
+			PC.ClientMessage(FillFormat2(MsgRespawnTeam, string(W.RespawnAt - W.DiedAt), string(W.AlliesAlive)));
+		else
+			PC.ClientMessage(FillFormat(MsgRespawnSolo, string(W.RespawnAt - W.DiedAt)));
+	}
+}
+
+/**
+ * Kill the HUD countdown of a waiting human (any stale "Respawn in N" left on
+ * screen while the player is alive must disappear immediately). Sent once per
+ * wait: LastCountdown is moved to the "cleared" sentinel -2.
+ */
+function ClearCountdown(int i)
+{
+	local PlayerController PC;
+
+	if ( Waiting[i].LastCountdown < 0 )
+		return;								// never shown / already cleared
+
+	Waiting[i].LastCountdown = -2;
+	PC = PlayerController(Waiting[i].C);
+	if ( PC != None && !PC.bDeleteMe )
+		PC.ReceiveLocalizedMessage(class'RespawnDelayCountdown', -1);
 }
 
 /**
@@ -446,10 +565,11 @@ function Mutate(string MutateString, PlayerController Sender)
 defaultproperties
 {
 	Enabled=True
-	BaseDelay=3.000000
+	BaseDelay=5.000000
 	DeathCamTime=1.000000
 	TeamFormula=True
 	Countdown=True
+	AffectBots=True
 	AffectInvasion=False
 	DelayTable="1,3 5,8 10,15"
 }
