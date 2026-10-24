@@ -180,7 +180,7 @@ docs/APPROACH.md                       this document
 |---|---|---|
 | `Enabled` | True | master switch (applied between matches) |
 | `BaseDelay` | 5.0 | seconds in solo (non-team) games |
-| `ServerCycle` | 5.0 | team games only: global wave cycle length; waits span one to two cycles. Exposed in the **Mutator GUI** as a 5-preset dropdown ("Arena [2s]", "Blitz [3s]", "Standard [5s]", "Strategic [7s]", "Tactical [10s]") |
+| `ServerCycle` | 5.0 | team games only: global wave cycle length; waits span one to two cycles. Exposed in the **Mutator GUI** as a 5-preset dropdown ("Arena [2s]", "Blitz [3s]", "Standard [5s]", "Strategic [10s]", "Tactical [15s]") |
 | `DeathCamTime` | 1.0 | vanilla death camera seconds before spectator mode |
 | `Countdown` | True | per-second HUD countdown while waiting |
 | `AffectBots` | True | apply the rules to bots as well |
@@ -195,7 +195,7 @@ wave-cycle preset on the mutator "Configure"/admin Rules pages:
 * `PlayInfo.AddSetting(default.RespGroup, "ServerCycle", GetDisplayText(...),
   0, 1, "Select", default.CyclePresetText)` — the Extras string is
   `"2.000000;Arena [2s];3.000000;Blitz [3s];5.000000;Standard [5s];
-  7.000000;Strategic [7s];10.000000;Tactical [10s]"` (value;Label pairs,
+  10.000000;Strategic [10s];15.000000;Tactical [15s]"` (value;Label pairs,
   exactly like the engine's own GameDifficulty dropdown). The labels come out
   of `RespawnDelay.int` (`RespGroup`, `CycleDisplayText`, `CycleDescText`,
   `CyclePresetText`).
@@ -250,6 +250,6 @@ wave-cycle preset on the mutator "Configure"/admin Rules pages:
    waits for `NumPlayers > 0`), so respawn flows need a live client to test.
 7. Mutator GUI: Instant Action or Lan game → Mutators → pick Respawn Delay →
    "Configure" → the "Respawn wave cycle" dropdown shows the five presets,
-   choosing one (e.g. Tactical [10s]) writes `ServerCycle=10.000000` into
+   choosing one (e.g. Tactical [15s]) writes `ServerCycle=15.000000` into
    `UT2004.ini` `[RespawnDelay.RespawnDelay]`, and the next team match runs
-   10–20 s waits. Check the startup log line (`wave cycle=10.00`).
+   15–30 s waits. Check the startup log line (`wave cycle=15.00`).

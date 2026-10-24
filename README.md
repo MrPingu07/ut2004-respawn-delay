@@ -71,8 +71,8 @@ AffectAssault=True
   | Arena [2s] | 2 s | 2–4 s | continuous chaos; near-instant respawns, batches happen mostly by accident from simultaneous explosions; Team Deathmatch |
   | Blitz [3s] | 3 s | 3–6 s | frenetic attack; fast-paced micro-batches; small maps and Capture the Flag |
   | Standard [5s] (default) | 5 s | 5–10 s | competitive balance; tactical flow and squad spawning in Onslaught and Assault |
-  | Strategic [7s] | 7 s | 7–14 s | semi-tactical pacing; forces defenders to group into large waves before pushing |
-  | Tactical [10s] | 10 s | 10–20 s | heavy combat simulation; teams respawn in full battalions for macro maps with heavy vehicles |
+  | Strategic [10s] | 10 s | 10–20 s | semi-tactical pacing; forces defenders to group into large waves before pushing |
+  | Tactical [15s] | 15 s | 15–30 s | heavy combat simulation; teams respawn in full battalions for macro maps with heavy vehicles |
 * `Countdown=False` hides the per-second HUD counter.
 * Console while dead: `mutate respawnstatus` — remaining seconds.
 * Extras: `BaseDelay` is the solo-mode wait; `AffectBots=False` leaves bots on
