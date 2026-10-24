@@ -473,6 +473,12 @@ function RegisterDeath(Controller C)
 
 	Waiting[Waiting.Length] = W;
 
+	// park bots immediately: "state Dead" is their own auto-respawn loop
+	// (RestartPlayer every ~0.5 s), we own the controller until RespawnAt.
+	// Leaving it would also abort the loop's pending latent Sleep.
+	if ( W.bBot )
+		Bot(C).GotoState('RoundEnded');
+
 	// announce the locked delay
 	PC = PlayerController(C);
 	if ( PC != None )

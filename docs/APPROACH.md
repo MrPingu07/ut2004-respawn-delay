@@ -83,8 +83,12 @@ The mutator (`RespawnDelay.RespawnDelay`) runs a **supervisor** on its own
    failure, e.g. late-comer rules, just retries).
 5. **Bots are parked, not spectated** — a dying bot has no spectator mode
    (`AIController` has no camera/AI in that state). Instead the bot is moved
-   out of its own respawn loop by `GotoState('RoundEnded')` (a passive
-   Controller state; abandoning `state Dead` cancels its pending `Sleep`).
+   out of its own respawn loop *at registration* by
+   `GotoState('RoundEnded')` (a passive Controller state —-engine version
+   ignores AI/perception events and only unpossesses a live pawn, which a
+   dead bot does not have; abandoning `state Dead` drops its pending latent
+   `Sleep`). The park must happen immediately: `state Dead` in Bot is a
+   self-restart loop that respawns in ~0.5 s by itself.
    At `RespawnAt` the supervisor calls `Level.Game.RestartPlayer(B)` —
    `Possess() → Restart() → Bot.Restart()` then drops the bot straight into
    `state Roaming` (vanilla wake-up path, verified in Bot.uc:1979), so no extra
