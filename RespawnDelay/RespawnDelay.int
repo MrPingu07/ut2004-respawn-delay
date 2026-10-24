@@ -1,6 +1,6 @@
 [Public]
-Object=(Name=RespawnDelay.RespawnDelay,Class=Class,MetaClass=Engine.Mutator,Description="Respawn Delay,Players must wait before respawning. Team games: the delay grows with the number of allies still alive (1 -> 3s, 5 -> 8s, 10 -> 15s), locked at death. Solo games: fixed 3 seconds. While waiting you spectate (FIRE cycles views).")
-Mutator=(ClassName=RespawnDelay.RespawnDelay,IconMaterialName=MutatorArt.nosym,FriendlyName=RespawnDelay.RespawnDelay.FriendlyName,Description=RespawnDelay.RespawnDelay.Description,FallbackName="Respawn Delay",FallbackDesc="Forces players to wait before respawning. Team games scale the delay with allies alive (1->3s, 5->8s, 10->15s) locked at death; solo games use a fixed 3s. While waiting you are a spectator (FIRE to cycle views).")
+Object=(Name=RespawnDelay.RespawnDelay,Class=Class,MetaClass=Engine.Mutator,Description="Respawn Delay,Players must wait before respawning. Team games: the delay grows with the number of allies still alive (1 -> 3s, 5 -> 8s, 10 -> 15s), locked at death. Solo games: fixed 5 seconds. While waiting you spectate (FIRE cycles views).")
+Mutator=(ClassName=RespawnDelay.RespawnDelay,IconMaterialName=MutatorArt.nosym,FriendlyName=RespawnDelay.RespawnDelay.FriendlyName,Description=RespawnDelay.RespawnDelay.Description,FallbackName="Respawn Delay",FallbackDesc="Forces players to wait before respawning. Team games scale the delay with allies alive (1->3s, 5->8s, 10->15s) locked at death; solo games use a fixed 5s. While waiting you are a spectator (FIRE to cycle views).")
 
 [RespawnDelay.RespawnDelay]
 FriendlyName="Respawn Delay"
