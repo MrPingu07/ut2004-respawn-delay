@@ -34,6 +34,8 @@ if [ -f RespawnDelay.u ]; then
     cp -f "$PKG/RespawnDelay.int" "$PKG/RespawnDelay.ucl" .
     echo
     echo "== RespawnDelay.u built and RespawnDelay.int/.ucl deployed to System/ =="
+    # note: RespawnDelay.ucl is hand-maintained in the repo - "ucc make" only
+    # exports it on the first build and never rewrites an existing one.
 else
     echo
     echo "== BUILD FAILED - last 40 lines of UCC.log: =="

@@ -4,6 +4,7 @@ Mutator=(ClassName=RespawnDelay.RespawnDelay,IconMaterialName=MutatorArt.nosym,F
 
 [RespawnDelay.RespawnDelay]
 FriendlyName="Respawn Delay"
+Description="Forces players to wait before respawning. Team games respawn in batches on a global 10s cycle: die with 5s or more left in the cycle and you spawn when it ends, otherwise your wait is exactly 10s (never longer). Solo games use a fixed 5s. While waiting you are a spectator (FIRE to cycle views)."
 
 ; -- localized strings used by the mutator (via ClientMessage) --
 MsgRespawnTeam="Spawn with the next reinforcement wave in %1 seconds"

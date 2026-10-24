@@ -1,1 +1,9 @@
-Mutator=(ClassName=RespawnDelay.RespawnDelay,IconMaterialName=MutatorArt.nosym,FriendlyName=RespawnDelay.RespawnDelay.FriendlyName,Description=RespawnDelay.RespawnDelay.Description,FallbackName="Respawn Delay",FallbackDesc="Forces players to wait before respawning. Team games scale the delay with allies alive (1->3s, 5->8s, 10->15s) locked at death; solo games use a fixed 3s. While waiting you are a spectator (FIRE to cycle views).")
+; ---------------------------------------------------------------------------
+; RespawnDelay.ucl - import cache for the mutators menu.
+;
+; NB: "ucc make" only exports this file on the very first build and never
+; regenerates an existing one - so the texts here must be maintained by
+; hand. That is why this file is committed to the repository, and why
+; make.sh simply deploys it to System/ unchanged.
+; ---------------------------------------------------------------------------
+Mutator=(ClassName=RespawnDelay.RespawnDelay,IconMaterialName=MutatorArt.nosym,FriendlyName=RespawnDelay.RespawnDelay.FriendlyName,Description=RespawnDelay.RespawnDelay.Description,FallbackName="Respawn Delay",FallbackDesc="Forces players to wait before respawning. Team games respawn in batches on a global 10s cycle: die with 5s or more left in the cycle and you spawn when it ends, otherwise your wait is exactly 10s (never longer). Solo games use a fixed 5s. While waiting you are a spectator (FIRE to cycle views).")
