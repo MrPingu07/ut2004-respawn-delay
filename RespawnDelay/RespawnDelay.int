@@ -1,10 +1,10 @@
 [Public]
-Object=(Name=RespawnDelay.RespawnDelay,Class=Class,MetaClass=Engine.Mutator,Description="Respawn Delay,Players must wait before respawning. Team games: global 10 s reinforcement cycle - die with 5+ s left in the cycle and you spawn when it ends, otherwise your wait is exactly 10 s. Solo games: fixed 5 seconds. While waiting you spectate (FIRE cycles views).")
-Mutator=(ClassName=RespawnDelay.RespawnDelay,IconMaterialName=MutatorArt.nosym,FriendlyName=RespawnDelay.RespawnDelay.FriendlyName,Description=RespawnDelay.RespawnDelay.Description,FallbackName="Respawn Delay",FallbackDesc="Forces players to wait before respawning. Team games respawn in batches on a global 10s cycle (5-10s waits); solo games use a fixed 5s. While waiting you are a spectator (FIRE to cycle views).")
+Object=(Name=RespawnDelay.RespawnDelay,Class=Class,MetaClass=Engine.Mutator,Description="Respawn Delay,Players must wait before respawning. Team games: global 5 s wave cycle - everyone respawns together at the next wave, waits are always 5-10 s. Solo games: fixed 5 seconds. While waiting you spectate (FIRE cycles views).")
+Mutator=(ClassName=RespawnDelay.RespawnDelay,IconMaterialName=MutatorArt.nosym,FriendlyName=RespawnDelay.RespawnDelay.FriendlyName,Description=RespawnDelay.RespawnDelay.Description,FallbackName="Respawn Delay",FallbackDesc="Forces players to wait before respawning. Team games respawn together in waves on a global 5s cycle (waits always 5-10s); solo games use a fixed 5s. While waiting you are a spectator (FIRE to cycle views).")
 
 [RespawnDelay.RespawnDelay]
 FriendlyName="Respawn Delay"
-Description="Forces players to wait before respawning. Team games respawn in batches on a global 10s cycle: die with 5s or more left in the cycle and you spawn when it ends, otherwise your wait is exactly 10s (never longer). Solo games use a fixed 5s. While waiting you are a spectator (FIRE to cycle views)."
+Description="Forces players to wait before respawning. Team games respawn together in waves on a global 5s cycle: waits are always 5-10s and every wave spawns as a synchronized batch. Solo games use a fixed 5s. While waiting you are a spectator (FIRE to cycle views)."
 
 ; -- localized strings used by the mutator (via ClientMessage) --
 MsgRespawnTeam="Spawn with the next reinforcement wave in %1 seconds"

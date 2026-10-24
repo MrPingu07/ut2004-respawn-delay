@@ -4,9 +4,9 @@
 
 | situation | behaviour |
 |---|---|
-| team game (TDM, CTF, BR, DOM, ONS, AS, ...) | **global batch cycle**: a global 10 s server cycle; die with ≥ 5 s left in the cycle → spawn when it ends (5–10 s wait); die later → wait exactly 10 s (pushed toward the next batch, capped). Value locked at death *until respawn* |
+| team game (TDM, CTF, BR, DOM, ONS, AS, ...) | **global wave cycle**: global 5 s server cycle; die right at a cycle start → 5 s wait (imminent wave); die later → wait = time remaining + 5 s, spawning in a synchronized batch at the end of the next cycle. Locked at death *until respawn*; waits always 5–10 s |
 | solo game (DM, LMS, ...) | always 5 s (no batching) |
-| bots | same rules; a dying bot waits its delay instead of respawning ~instantly (`AffectBots=True`) — in team games bots join the same batches |
+| bots | same rules; a dying bot waits its delay instead of respawning ~instantly (`AffectBots=True`) — in team games bots join the same waves |
 | while waiting | spectator mode: switch between team-mates, or between all players when solo |
 
 ## Why not hook-based approaches
@@ -47,21 +47,24 @@ The mutator (`RespawnDelay.RespawnDelay`) runs a **supervisor** on its own
 2. **Delay computation (set in stone)** — at registration,
    `RespawnDelayFor(C)` is evaluated once:
    * solo games → `BaseDelay` (5 s)
-   * team games → the global batch cycle:
+   * team games → the global wave cycle (perfect synchronization):
 
-     batches are counted on the global server clock — every
-     `Level.TimeSeconds` multiple of `BatchCycleLen` (10 s) is a cycle
-     boundary. At death, the remaining time of the current cycle decides:
+     waves land on every `Level.TimeSeconds` multiple of `BatchCycleLen`
+     (5 s by default). At death the remaining time of the cycle picks the
+     wave:
 
-     - **≥ `BatchMinLeft` (5 s) left** → ride out the current cycle:
-       wait = remainder (so between 5 and 10 s);
-     - **< 5 s left** → pushed toward the next batch, capped at exactly one
-       full cycle: wait = `BatchCycleLen` (10 s), never longer.
+     - **remain == BatchCycleLen** (died exactly on a boundary, i.e. the
+       cycle just started) → wait `BatchCycleLen` and spawn at the imminent
+       wave (its closing boundary);
+     - **remain < BatchCycleLen** → pushed to the NEXT wave: wait =
+       `remain + BatchCycleLen`, so everyone dead within a cycle spawns
+       together on the closing boundary of the next cycle.
 
-     Nobody waits outside the 5–10 s range; anyone dying early enough in a
-     cycle spawns on its final boundary (a batch, like vanilla Assault's
-     reinforcement waves). The final value is stored as
-     `RespawnAt = DiedAt + delay` and **never recomputed** until respawn.
+     Every `RespawnAt` is an exact `BatchCycleLen` multiple of the server
+     clock — synchronized batches by construction — and waits are always
+     within `[BatchCycleLen, 2*BatchCycleLen]` (5–10 s with the default).
+     The value is stored as `RespawnAt = DiedAt + delay` and **never
+     recomputed** until respawn.
 3. **Spectator mode** — after `DeathCamTime`, the controller is moved exactly
    the way vanilla LMS does (`UnrealPlayer.ServerSpectate`):
    `GotoState('Spectating')`, `bBehindView = true`,
@@ -177,8 +180,7 @@ docs/APPROACH.md                       this document
 |---|---|---|
 | `Enabled` | True | master switch (applied between matches) |
 | `BaseDelay` | 5.0 | seconds in solo (non-team) games |
-| `BatchCycleLen` | 10.0 | team games only: global reinforcement cycle length |
-| `BatchMinLeft` | 5.0 | team games only: deaths with ≥ this many seconds left ride the cycle out; later deaths wait a full cycle |
+| `BatchCycleLen` | 5.0 | team games only: global wave cycle length; waits span one to two cycles |
 | `DeathCamTime` | 1.0 | vanilla death camera seconds before spectator mode |
 | `Countdown` | True | per-second HUD countdown while waiting |
 | `AffectBots` | True | apply the rules to bots as well |
@@ -204,9 +206,10 @@ docs/APPROACH.md                       this document
    - `_ "FIRE"` cycles, AltFire returns to own camera
    - console message shows the locked delay; respawn happens only after it
    - `mutate respawnstatus` while waiting prints the remaining time
-2. Team games: two players dying early in the same 10 s cycle show **the same
-   countdown** and respawn together at the cycle's end; a player dying with
-   < 5 s left gets exactly 10 s. Waits never fall outside 5–10 s.
+2. Team games: everyone dying within the same 5 s cycle shows counts that all
+   hit 0 within the same half-second and respawn together at the next wave's
+   boundary; waits never fall outside 5–10 s. Watch a full wave: several
+   players/bots popping at (almost) the same instant, then silence.
 3. Solo DM: every death waits the full 5 s regardless of timing.
 4. Bots: kill a bot → it should not reappear before its delay; simplest check
    is relative respawn timing (yours vs. the bots'), and bots fighting again

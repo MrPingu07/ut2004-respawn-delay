@@ -6,15 +6,17 @@
 // Forces players to wait before they can respawn after dying:
 //
 //  * Team based game modes (TDM, CTF, BR, DOM, ONS, AS, ...):
-//      a GLOBAL 10 second server cycle (reinforcement waves). When a player
-//      dies, the remaining time of the current cycle is calculated:
-//          >= 5 seconds left -> spawns at the end of THIS cycle (wait =
-//                              time remaining in the cycle, 5..10 s)
-//          <  5 seconds left -> pushed to the next batch, capped at exactly
-//                              a 10 second wait (never longer)
-//      Nobody waits outside 5-10 seconds, and everyone dying in the same
-//      window respawns together in "batches", like vanilla Assault waves.
-//      The wait is locked at death until respawn.
+//      a GLOBAL 5 second server cycle (reinforcement waves, always on cycle
+//      multiples). When a player dies, the remaining time of the current
+//      cycle is calculated:
+//          exactly 5 s left (died right at a cycle start)
+//                  -> wait 5 s, spawn at the end of the current cycle
+//          less    -> pushed to the NEXT wave: wait = TimeRemaining + 5 s,
+//                     i.e. everyone in the cycle spawns together at the end
+//                     of the next cycle
+//      Every respawn lands exactly on a 5 s boundary (perfect batches) and
+//      nobody waits outside 5-10 seconds. The wait is locked at death until
+//      respawn.
 //
 //  * Non team modes (DM, LMS, ...): fixed BaseDelay (default 5 seconds).
 //      unchanged - no batching in solo modes.
@@ -73,11 +75,8 @@ var() config bool	Enabled;
 /** Respawn delay (seconds) in non team games. Team games use the batch cycle instead. */
 var() config float	BaseDelay;
 
-/** Team mode: length of the global reinforcement cycle (seconds). */
+/** Team mode: length of the global reinforcement cycle (seconds); waves land on its multiples. */
 var() config float	BatchCycleLen;
-
-/** Team mode: dies with at least this many seconds left in the cycle ride it out; later deaths wait one full cycle (capped). */
-var() config float	BatchMinLeft;
 
 /** Seconds still spent in the vanilla death camera before spectator mode starts. */
 var() config float	DeathCamTime;
@@ -173,7 +172,7 @@ function PostBeginPlay()
 	SetTimer(0.05, true);
 
 	log("RespawnDelay enabled ("$Level.Game$" team="$Level.Game.bTeamGame$")"
-		@"solo delay="$BaseDelay@"batch cycle="$BatchCycleLen@"min left="$BatchMinLeft, 'RespawnDelay');
+		@"solo delay="$BaseDelay@"wave cycle="$BatchCycleLen, 'RespawnDelay');
 }
 
 // ---------------------------------------------------------------------------
@@ -199,11 +198,17 @@ function float CycleRemaining()
  * The delay for the death of C, evaluated once at death; the result is locked
  * until respawn.
  *
- * Team games: the global batch cycle -
- *   - >= BatchMinLeft seconds left in the cycle -> ride out the current cycle
- *     (wait = time remaining, so between BatchMinLeft and BatchCycleLen);
- *   - later than that -> pushed to the next batch, capped at exactly a full
- *     BatchCycleLen wait (never waits longer than that).
+ * Team games - perfect batch alignment on the global cycle:
+ *   - dying exactly on a cycle boundary (TimeRemaining == BatchCycleLen,
+ *     the cycle has just started) -> wait exactly BatchCycleLen seconds and
+ *     spawn at the end of the current cycle;
+ *   - dying anywhere else -> pushed to the NEXT wave: wait =
+ *     TimeRemaining + BatchCycleLen, i.e. the whole cycle's dead spawn
+ *     together on the closing boundary of the next cycle.
+ *
+ * Every respawn therefore lands exactly on a BatchCycleLen multiple of the
+ * server clock (synchronized batches), and waits are always within
+ * [BatchCycleLen, 2*BatchCycleLen] = 5-10 s with the default 5 s cycle.
  * Solo games (no batching): plain BaseDelay.
  */
 function float RespawnDelayFor(Controller C)
@@ -213,12 +218,13 @@ function float RespawnDelayFor(Controller C)
 	if ( Level.Game != None && Level.Game.bTeamGame && BatchCycleLen > 0 )
 	{
 		Remain = CycleRemaining();
-		if ( Remain >= BatchMinLeft )
-			return Remain;
+		if ( Remain >= BatchCycleLen )		// died exactly on a boundary
+			return BatchCycleLen;
 
-		// late in the cycle: a full cycle from now (may land mid-cycle,
-		// since it is capped)
-		return BatchCycleLen;
+		// pushed to the next wave; RespawnAt = DiedAt + Remain + BatchCycleLen
+		// is an exact cycle multiple again (float-rounding aside), so the
+		// whole batch spawns in the same tick.
+		return Remain + BatchCycleLen;
 	}
 
 	return BaseDelay;
@@ -523,8 +529,7 @@ defaultproperties
 {
 	Enabled=True
 	BaseDelay=5.000000
-	BatchCycleLen=10.000000
-	BatchMinLeft=5.000000
+	BatchCycleLen=5.000000
 	DeathCamTime=1.000000
 	Countdown=True
 	AffectBots=True
