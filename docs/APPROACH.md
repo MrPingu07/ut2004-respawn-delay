@@ -4,9 +4,9 @@
 
 | situation | behaviour |
 |---|---|
-| team game (TDM, CTF, BR, DOM, ONS, AS, ...) | delay depends on **allies alive at death**: 1 ally → 3 s, 5 → 8 s, 10 → 15 s (piecewise linear in between); value locked at death *until respawn* |
-| solo game (DM, LMS, ...) | always 5 s |
-| bots | same rules; a dying bot waits its delay instead of respawning ~instantly (`AffectBots=True`) |
+| team game (TDM, CTF, BR, DOM, ONS, AS, ...) | **global batch cycle**: a global 10 s server cycle; die with ≥ 5 s left in the cycle → spawn when it ends (5–10 s wait); die later → wait exactly 10 s (pushed toward the next batch, capped). Value locked at death *until respawn* |
+| solo game (DM, LMS, ...) | always 5 s (no batching) |
+| bots | same rules; a dying bot waits its delay instead of respawning ~instantly (`AffectBots=True`) — in team games bots join the same batches |
 | while waiting | spectator mode: switch between team-mates, or between all players when solo |
 
 ## Why not hook-based approaches
@@ -46,24 +46,22 @@ The mutator (`RespawnDelay.RespawnDelay`) runs a **supervisor** on its own
    `GameInfo.RestartPlayer`, so it filters out that match-start case).
 2. **Delay computation (set in stone)** — at registration,
    `RespawnDelayFor(C)` is evaluated once:
-   * non-team game or `TeamFormula=false` → `BaseDelay` (5 s)
-   * team game → curve evaluation with `N = CountAliveAllies(PC)`
-     (any team member whose `Pawn.Health > 0`, excluding observers, self and
-     out-of-lives players) against the anchor table parsed from
-     `DelayTable="1,3 5,8 10,15"`:
+   * solo games → `BaseDelay` (5 s)
+   * team games → the global batch cycle:
 
-       | N (allies alive) | delay |
-       |---|---|
-       | ≤ 1 | 3 s |
-       | 2 | 4.25 s |
-       | 5 | 8 s |
-       | 7 | 10.8 s |
-       | 10 | 15 s |
-       | > 10 | 15 s (clamped) |
+     batches are counted on the global server clock — every
+     `Level.TimeSeconds` multiple of `BatchCycleLen` (10 s) is a cycle
+     boundary. At death, the remaining time of the current cycle decides:
 
-     piecewise linear between anchors, clamped at both ends. The final value is
-     stored as `RespawnAt = DiedAt + delay` and **never recomputed** until the
-     player respawns — allies dying later cannot extend or shorten the wait.
+     - **≥ `BatchMinLeft` (5 s) left** → ride out the current cycle:
+       wait = remainder (so between 5 and 10 s);
+     - **< 5 s left** → pushed toward the next batch, capped at exactly one
+       full cycle: wait = `BatchCycleLen` (10 s), never longer.
+
+     Nobody waits outside the 5–10 s range; anyone dying early enough in a
+     cycle spawns on its final boundary (a batch, like vanilla Assault's
+     reinforcement waves). The final value is stored as
+     `RespawnAt = DiedAt + delay` and **never recomputed** until respawn.
 3. **Spectator mode** — after `DeathCamTime`, the controller is moved exactly
    the way vanilla LMS does (`UnrealPlayer.ServerSpectate`):
    `GotoState('Spectating')`, `bBehindView = true`,
@@ -178,12 +176,12 @@ docs/APPROACH.md                       this document
 | var | default | meaning |
 |---|---|---|
 | `Enabled` | True | master switch (applied between matches) |
-| `BaseDelay` | 5.0 | seconds in non-team games |
-| `DelayTable` | `1,3 5,8 10,15` | team curve anchors (see above) |
+| `BaseDelay` | 5.0 | seconds in solo (non-team) games |
+| `BatchCycleLen` | 10.0 | team games only: global reinforcement cycle length |
+| `BatchMinLeft` | 5.0 | team games only: deaths with ≥ this many seconds left ride the cycle out; later deaths wait a full cycle |
 | `DeathCamTime` | 1.0 | vanilla death camera seconds before spectator mode |
-| `TeamFormula` | True | False = use BaseDelay in team games too |
 | `Countdown` | True | per-second HUD countdown while waiting |
-| `AffectBots` | True | apply the delay to bots as well |
+| `AffectBots` | True | apply the rules to bots as well |
 | `AffectInvasion` | False | apply delays in Invasion as well |
 | `AffectAssault` | True | take respawn authority in Assault (disables the vanilla reinforcement waves); False = hands-off in Assault |
 
@@ -206,10 +204,10 @@ docs/APPROACH.md                       this document
    - `_ "FIRE"` cycles, AltFire returns to own camera
    - console message shows the locked delay; respawn happens only after it
    - `mutate respawnstatus` while waiting prints the remaining time
-2. TDM/CTF: delay changes with team-mate count at the **moment of death**
-   (let allies die while you wait — the delay must not change).
-3. CTF with 5 team-mates alive everywhere → 8 s delay; same map with everyone
-   else dead → 3 s.
+2. Team games: two players dying early in the same 10 s cycle show **the same
+   countdown** and respawn together at the cycle's end; a player dying with
+   < 5 s left gets exactly 10 s. Waits never fall outside 5–10 s.
+3. Solo DM: every death waits the full 5 s regardless of timing.
 4. Bots: kill a bot → it should not reappear before its delay; simplest check
    is relative respawn timing (yours vs. the bots'), and bots fighting again
    after the wait rather than standing idle (idle → a safety valve fired —

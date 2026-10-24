@@ -1,12 +1,12 @@
 [Public]
-Object=(Name=RespawnDelay.RespawnDelay,Class=Class,MetaClass=Engine.Mutator,Description="Respawn Delay,Players must wait before respawning. Team games: the delay grows with the number of allies still alive (1 -> 3s, 5 -> 8s, 10 -> 15s), locked at death. Solo games: fixed 5 seconds. While waiting you spectate (FIRE cycles views).")
-Mutator=(ClassName=RespawnDelay.RespawnDelay,IconMaterialName=MutatorArt.nosym,FriendlyName=RespawnDelay.RespawnDelay.FriendlyName,Description=RespawnDelay.RespawnDelay.Description,FallbackName="Respawn Delay",FallbackDesc="Forces players to wait before respawning. Team games scale the delay with allies alive (1->3s, 5->8s, 10->15s) locked at death; solo games use a fixed 5s. While waiting you are a spectator (FIRE to cycle views).")
+Object=(Name=RespawnDelay.RespawnDelay,Class=Class,MetaClass=Engine.Mutator,Description="Respawn Delay,Players must wait before respawning. Team games: global 10 s reinforcement cycle - die with 5+ s left in the cycle and you spawn when it ends, otherwise your wait is exactly 10 s. Solo games: fixed 5 seconds. While waiting you spectate (FIRE cycles views).")
+Mutator=(ClassName=RespawnDelay.RespawnDelay,IconMaterialName=MutatorArt.nosym,FriendlyName=RespawnDelay.RespawnDelay.FriendlyName,Description=RespawnDelay.RespawnDelay.Description,FallbackName="Respawn Delay",FallbackDesc="Forces players to wait before respawning. Team games respawn in batches on a global 10s cycle (5-10s waits); solo games use a fixed 5s. While waiting you are a spectator (FIRE to cycle views).")
 
 [RespawnDelay.RespawnDelay]
 FriendlyName="Respawn Delay"
 
 ; -- localized strings used by the mutator (via ClientMessage) --
-MsgRespawnTeam="Respawn delay locked at %1 seconds (alive team-mates: %2)"
+MsgRespawnTeam="Spawn with the next reinforcement wave in %1 seconds"
 MsgRespawnSolo="Respawn delay locked at %1 seconds"
 MsgSpectateHint="Waiting to respawn - FIRE: next player view, ALT-FIRE: own camera"
 MsgStatusWaiting="RespawnDelay: you respawn in %1 seconds"

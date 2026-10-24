@@ -1,15 +1,19 @@
 # RespawnDelay — a respawn-delay mutator for Unreal Tournament 2004
 
-Teams only also get a *team-scaled* wait; solo players always wait 5 seconds.
-Bots follow the same rules, so a dead bot waits its delay before coming back
-instead of popping in instantly. While waiting you are a spectator: `FIRE`
-cycles player views (own team in team games, everybody in solo games),
-`ALT-FIRE` returns to your own free camera. The delay is computed once when you
-die and stays locked until you respawn.
+Team games respawn in **batches** on a global 10-second server cycle: when you
+die with 5+ seconds left in the current cycle you spawn when it ends; die any
+later and you wait exactly 10 seconds (pushed toward the next batch, capped).
+Nobody waits outside the 5–10 second range, and players dying in the same
+window come back together, like vanilla Assault's reinforcement waves.
+Solo games keep the simple fixed rule: always 5 seconds.
+Bots follow the same rules (in team games they join the batches too). While
+waiting you are a spectator: `FIRE` cycles player views (own team in team
+games, everybody in solo games), `ALT-FIRE` returns to your own free camera.
+The wait is computed once when you die and stays locked until you respawn.
 
 | mode | delay rule |
 |---|---|
-| Team games (TDM, CTF, BR, DOM, ONS, AS...) | 1 ally alive → **3 s**, 5 allies → **8 s**, 10 allies → **15 s** (linear in between, clamped) |
+| Team games (TDM, CTF, BR, DOM, ONS, AS, TDM...) | global **10 s cycle**: ≥ 5 s left in the cycle → spawn at the cycle's end (5–10 s wait), otherwise → exactly **10 s** wait |
 | Solo games (DM, LMS, ...) | **5 s** |
 
 While waiting you also get a live HUD countdown — "Respawn in 10, 9, 8, ..."
@@ -49,23 +53,25 @@ open CTF-FaceClassic?mutator=RespawnDelay.RespawnDelay
 [RespawnDelay.RespawnDelay]
 Enabled=True
 BaseDelay=5.000000
-DelayTable="1,3 5,8 10,15"
+BatchCycleLen=10.000000
+BatchMinLeft=5.000000
 DeathCamTime=1.000000
-TeamFormula=True
 Countdown=True
 AffectBots=True
 AffectInvasion=False
 AffectAssault=True
 ```
 
-* `DelayTable` — "alliesAlive,delaySeconds" pairs: fewer allies than the first
-  anchor → first delay; more than the last → last delay; linear between.
+* `BatchCycleLen` — team games only: length of the global reinforcement cycle;
+  every multiple of it is a batch boundary.
+* `BatchMinLeft` — team games only: deaths with at least this many seconds
+  left in the cycle ride it out; later deaths wait a full `BatchCycleLen`
+  (10 s), so waits always land in the `BatchMinLeft`–`BatchCycleLen` range.
 * `Countdown=False` hides the per-second HUD counter.
 * Console while dead: `mutate respawnstatus` — remaining seconds.
-* Extras: `TeamFormula=False` forces `BaseDelay` everywhere;
-  `AffectBots=False` leaves bots on their vanilla (instant) respawn;
-  `AffectAssault=False` keeps Assault's vanilla reinforcement waves (the
-  mutator stays inactive in Assault then);
+* Extras: `BaseDelay` is the solo-mode wait; `AffectBots=False` leaves bots on
+  their vanilla (instant) respawn; `AffectAssault=False` keeps Assault's
+  vanilla reinforcement waves (the mutator stays inactive in Assault then);
   `AffectInvasion=True` applies delays on top of Invasion's wave respawn
   (off by default, the game already waits for the next wave).
 * Network play: add `ServerPackages=RespawnDelay` to `UT2004.ini`

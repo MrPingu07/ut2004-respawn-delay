@@ -6,16 +6,18 @@
 // Forces players to wait before they can respawn after dying:
 //
 //  * Team based game modes (TDM, CTF, BR, DOM, ONS, AS, ...):
-//      the delay scales with how many team-mates are ALIVE at the moment of
-//      death. Defaults (broken in through DelayTable):
-//          1  alive ally -> 3s
-//          5  alive allies -> 8s
-//          10 alive allies -> 15s
-//      piecewise linear in between, clamped below the first and above the
-//      last anchor. The value is computed ONCE (at death) and "set in
-//      stone" until the player respawns.
+//      a GLOBAL 10 second server cycle (reinforcement waves). When a player
+//      dies, the remaining time of the current cycle is calculated:
+//          >= 5 seconds left -> spawns at the end of THIS cycle (wait =
+//                              time remaining in the cycle, 5..10 s)
+//          <  5 seconds left -> pushed to the next batch, capped at exactly
+//                              a 10 second wait (never longer)
+//      Nobody waits outside 5-10 seconds, and everyone dying in the same
+//      window respawns together in "batches", like vanilla Assault waves.
+//      The wait is locked at death until respawn.
 //
 //  * Non team modes (DM, LMS, ...): fixed BaseDelay (default 5 seconds).
+//      unchanged - no batching in solo modes.
 //
 //  * Bots are delayed the same way (config AffectBots): a dying bot is parked
 //    in the passive controller state 'RoundEnded' (it just idles there, like
@@ -68,23 +70,17 @@ class RespawnDelay extends Mutator
 /** Master switch; can be toggled in UT2004.ini between matches. */
 var() config bool	Enabled;
 
-/** Respawn delay (seconds) in non team games (and in team games if TeamFormula is disabled). */
+/** Respawn delay (seconds) in non team games. Team games use the batch cycle instead. */
 var() config float	BaseDelay;
 
-/**
- * Team curve, "aliveAllies,delaySeconds" pairs separated by spaces.
- * Default: "1,3 5,8 10,15"
- *   - fewer alive allies than the first anchor -> first anchor's delay
- *   - between anchors                          -> linear interpolation
- *   - more alive allies than the last anchor   -> last anchor's delay
- */
-var() config string	DelayTable;
+/** Team mode: length of the global reinforcement cycle (seconds). */
+var() config float	BatchCycleLen;
+
+/** Team mode: dies with at least this many seconds left in the cycle ride it out; later deaths wait one full cycle (capped). */
+var() config float	BatchMinLeft;
 
 /** Seconds still spent in the vanilla death camera before spectator mode starts. */
 var() config float	DeathCamTime;
-
-/** False to apply BaseDelay in team games as well (formula off). */
-var() config bool	TeamFormula;
 
 /** Show a per-second HUD countdown while waiting (only visible to the waiting player). */
 var() config bool	Countdown;
@@ -116,7 +112,7 @@ var() config bool	AffectAssault;
 // ---------------------------------------------------------------------------
 // Localization (see RespawnDelay.int)
 // ---------------------------------------------------------------------------
-var localized string	MsgRespawnTeam;		// "%1" all of the seconds, "%2" their alive allies
+var localized string	MsgRespawnTeam;		// "%1" the seconds left in the cycle
 var localized string	MsgRespawnSolo;		// "%1" number of seconds
 var localized string	MsgSpectateHint;
 var localized string	MsgStatusWaiting;	// "%1" the seconds remaining
@@ -133,17 +129,12 @@ struct TWaitingPlayer
 	var bool				bBot;
 	var float				DiedAt;		// server time of the detected death
 	var float				RespawnAt;	// locked respawn time
-	var int					AlliesAlive;// snapshot taken at death
 	var float				LastAttempt;// last RestartPlayer attempt (rate limiter)
 	var int					Tries;		// failed RestartPlayer attempts
 	var int					LastCountdown;	// whole seconds already displayed (-1 = none yet, -2 = cleared)
 };
 
 var array<TWaitingPlayer>	Waiting;
-
-// DelayTable parsed into these
-var array<float>			CurveN;		// "alive allies" breakpoints
-var array<float>			CurveT;		// "delay seconds" breakpoints
 
 // game-type knobs, cached once at PostBeginPlay
 var bool					bIsAssault;		// running ASGameInfo
@@ -157,11 +148,10 @@ function PostBeginPlay()
 {
 	Super.PostBeginPlay();
 
-	ParseDelayTable();
-
 	// Assault: the game runs its own reinforcement waves that would co-govern
-	// respawns. With AffectAssault enabled, shut them off so the delay here is
-	// the only respawn authority; if disabled, stay hands-off in Assault.
+	// respawns. With AffectAssault enabled, shut them off so this mutator's
+	// own batch cycle is the only respawn authority; if disabled, stay
+	// hands-off in Assault.
 	if ( Level.Game != None && Level.Game.IsA('ASGameInfo') )
 	{
 		bIsAssault = true;
@@ -182,137 +172,56 @@ function PostBeginPlay()
 	// supervisor: 20 checks per second is plenty, the loops are trivial
 	SetTimer(0.05, true);
 
-	log("RespawnDelay enabled ("$Level.Game$" team="$Level.Game.bTeamGame$") BaseDelay="$BaseDelay@"Table="$DelayTable, 'RespawnDelay');
+	log("RespawnDelay enabled ("$Level.Game$" team="$Level.Game.bTeamGame$")"
+		@"solo delay="$BaseDelay@"batch cycle="$BatchCycleLen@"min left="$BatchMinLeft, 'RespawnDelay');
 }
 
 // ---------------------------------------------------------------------------
-// Delay table parsing
-// ---------------------------------------------------------------------------
-
-function ParseDelayTable()
-{
-	local string Remaining, Pair;
-	local int i, Comma;
-	local float n, t;
-
-	CurveN.Length = 0;
-	CurveT.Length = 0;
-
-	Remaining = DelayTable;
-	while ( Remaining != "" )
-	{
-		// strip leading spaces
-		while ( Left(Remaining, 1) == " " )
-			Remaining = Mid(Remaining, 1);
-		if ( Remaining == "" )
-			break;
-
-		i = InStr(Remaining, " ");
-		if ( i >= 0 )
-		{
-			Pair = Left(Remaining, i);
-			Remaining = Mid(Remaining, i + 1);
-		}
-		else
-		{
-			Pair = Remaining;
-			Remaining = "";
-		}
-
-		Comma = InStr(Pair, ",");
-		if ( Comma <= 0 )
-			continue;
-
-		n = float(Left(Pair, Comma));
-		t = float(Mid(Pair, Comma + 1));
-		if ( n < 0.0 || t < 0.0 )
-			continue;
-
-		CurveN[CurveN.Length] = n;
-		CurveT[CurveT.Length] = t;
-	}
-
-	// fall back to the documented defaults on a broken table
-	if ( CurveN.Length == 0 )
-	{
-		CurveN[0] = 1.0;  CurveT[0] = 3.0;
-		CurveN[1] = 5.0;  CurveT[1] = 8.0;
-		CurveN[2] = 10.0; CurveT[2] = 15.0;
-		log("RespawnDelay: DelayTable could not be parsed, using default curve", 'RespawnDelay');
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Curve evaluation
+// Respawn math
 // ---------------------------------------------------------------------------
 
 /**
- * The delay for the death of C, evaluated with the CURRENT number of allies
- * alive. Called exactly once per death; the result is locked until respawn.
+ * Seconds still left in the current batch cycle. Cycles are counted on the
+ * global server clock: every Level.TimeSeconds multiple of BatchCycleLen is a
+ * batch boundary.
+ */
+function float CycleRemaining()
+{
+	local float Offset;
+
+	// Level.TimeSeconds is the plain server clock (running from ~0 at map
+	// load); int() truncation gives the current cycle index.
+	Offset = Level.TimeSeconds - (BatchCycleLen * float(int(Level.TimeSeconds / BatchCycleLen)));
+	return FMax(0.0, BatchCycleLen - Offset);
+}
+
+/**
+ * The delay for the death of C, evaluated once at death; the result is locked
+ * until respawn.
+ *
+ * Team games: the global batch cycle -
+ *   - >= BatchMinLeft seconds left in the cycle -> ride out the current cycle
+ *     (wait = time remaining, so between BatchMinLeft and BatchCycleLen);
+ *   - later than that -> pushed to the next batch, capped at exactly a full
+ *     BatchCycleLen wait (never waits longer than that).
+ * Solo games (no batching): plain BaseDelay.
  */
 function float RespawnDelayFor(Controller C)
 {
-	if ( Level.Game != None && Level.Game.bTeamGame && TeamFormula )
-		return TeamRespawnDelay(C);
+	local float Remain;
+
+	if ( Level.Game != None && Level.Game.bTeamGame && BatchCycleLen > 0 )
+	{
+		Remain = CycleRemaining();
+		if ( Remain >= BatchMinLeft )
+			return Remain;
+
+		// late in the cycle: a full cycle from now (may land mid-cycle,
+		// since it is capped)
+		return BatchCycleLen;
+	}
 
 	return BaseDelay;
-}
-
-function float TeamRespawnDelay(Controller C)
-{
-	local int N;
-	local int i;
-	local float N0, D0, N1, D1;
-
-	N = CountAliveAllies(C);
-
-	// before the first anchor / no curve
-	if ( N <= CurveN[0] )
-		return CurveT[0];
-
-	// linear interpolation between anchors
-	for ( i = 1; i < CurveN.Length; i++ )
-	{
-		if ( N <= CurveN[i] )
-		{
-			N0 = CurveN[i-1];
-			D0 = CurveT[i-1];
-			N1 = CurveN[i];
-			D1 = CurveT[i];
-			return D0 + (D1 - D0) * ( (N - N0) / (N1 - N0) );
-		}
-	}
-
-	// beyond the last anchor
-	return CurveT[CurveN.Length - 1];
-}
-
-/**
- * Number of team-mates (appointments/bots aside: any non spectator
- * team member) that are currently alive, Observer excluded.
- */
-function int CountAliveAllies(Controller Observer)
-{
-	local Controller C;
-	local int N;
-
-	for ( C = Level.ControllerList; C != None; C = C.NextController )
-	{
-		if ( C == Observer || C.bDeleteMe )
-			continue;
-		if ( C.PlayerReplicationInfo == None )
-			continue;
-		if ( C.PlayerReplicationInfo.bOnlySpectator )
-			continue;
-		if ( C.PlayerReplicationInfo.bOutOfLives )
-			continue;
-		if ( C.GetTeamNum() != Observer.GetTeamNum() )
-			continue;
-		if ( C.Pawn == None || C.Pawn.bDeleteMe || C.Pawn.Health <= 0 )
-			continue;
-		N++;
-	}
-	return N;
 }
 
 // ---------------------------------------------------------------------------
@@ -518,7 +427,6 @@ function RegisterDeath(Controller C)
 	W.LastAttempt	= 0.0;
 	W.Tries			= 0;
 	W.LastCountdown	= -1;		// forces the first countdown pulse immediately
-	W.AlliesAlive	= CountAliveAllies(C);
 	W.RespawnAt		= Level.TimeSeconds + RespawnDelayFor(C);
 
 	Waiting[Waiting.Length] = W;
@@ -533,8 +441,8 @@ function RegisterDeath(Controller C)
 	PC = PlayerController(C);
 	if ( PC != None )
 	{
-		if ( Level.Game.bTeamGame && TeamFormula )
-			PC.ClientMessage(FillFormat2(MsgRespawnTeam, string(W.RespawnAt - W.DiedAt), string(W.AlliesAlive)));
+		if ( Level.Game.bTeamGame )
+			PC.ClientMessage(FillFormat(MsgRespawnTeam, string(W.RespawnAt - W.DiedAt)));
 		else
 			PC.ClientMessage(FillFormat(MsgRespawnSolo, string(W.RespawnAt - W.DiedAt)));
 	}
@@ -587,13 +495,6 @@ function string FillFormat(string F, string V1)
 	return F;
 }
 
-function string FillFormat2(string F, string V1, string V2)
-{
-	F = FillFormat(F, V1);
-	ReplaceText(F, "%2", V2);
-	return F;
-}
-
 // ---------------------------------------------------------------------------
 // Console: "mutate respawnstatus" prints the current delay situation
 // ---------------------------------------------------------------------------
@@ -622,11 +523,11 @@ defaultproperties
 {
 	Enabled=True
 	BaseDelay=5.000000
+	BatchCycleLen=10.000000
+	BatchMinLeft=5.000000
 	DeathCamTime=1.000000
-	TeamFormula=True
 	Countdown=True
 	AffectBots=True
 	AffectInvasion=False
 	AffectAssault=True
-	DelayTable="1,3 5,8 10,15"
 }
