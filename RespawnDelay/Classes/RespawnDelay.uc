@@ -24,6 +24,10 @@
 //      ALT-FIRE        returns to the own (free) camera
 //      Aggression AE   spectator free camera (fly around the map)
 //
+//  * While waiting, a per-second HUD countdown ("Respawn in 10, 9, 8...")
+//      is shown to the waiting player only (RespawnDelayCountdown localized
+//      message; it lives in the HUD queue, never in the chat log).
+//
 // Technical notes (see docs/ in the project repository):
 //  The vanilla respawn paths (PlayerController "state Dead" / firing, or
 //  DeathMatch "MatchInProgress" auto respawn loop with bForceRespawn) are not
@@ -66,6 +70,9 @@ var() config float	DeathCamTime;
 /** False to apply BaseDelay in team games as well (formula off). */
 var() config bool	TeamFormula;
 
+/** Show a per-second HUD countdown while waiting (only visible to the waiting player). */
+var() config bool	Countdown;
+
 /**
  * Invasion respawns by wave and the game itself keeps dead players waiting.
  * Leave disabled unless the delay should pile up on top of the wave logic.
@@ -93,6 +100,7 @@ struct TWaitingPlayer
 	var float				RespawnAt;	// locked respawn time
 	var int					AlliesAlive;// snapshot taken at death
 	var float				LastAttempt;// last RestartPlayer attempt (rate limiter)
+	var int					LastCountdown;	// whole seconds already displayed
 };
 
 var array<TWaitingPlayer>	Waiting;
@@ -255,7 +263,7 @@ function Timer()
 {
 	local Controller			C;
 	local PlayerController		PC;
-	local int					i;
+	local int					i, Secs;
 
 	if ( !Enabled )
 		return;
@@ -291,6 +299,17 @@ function Timer()
 		{
 			Waiting.Remove(i, 1);
 			continue;
+		}
+
+		// per-second HUD countdown, one pulse per whole second left
+		if ( Countdown )
+		{
+			Secs = int(Waiting[i].RespawnAt - Level.TimeSeconds);
+			if ( Secs != Waiting[i].LastCountdown && Secs >= 0 )
+			{
+				Waiting[i].LastCountdown = Secs;
+				PC.ReceiveLocalizedMessage(class'RespawnDelayCountdown', Secs);
+			}
 		}
 
 		if ( PC.IsInState('Spectating') )
@@ -351,6 +370,7 @@ function RegisterDeath(PlayerController PC)
 	W.PC			= PC;
 	W.DiedAt		= Level.TimeSeconds;
 	W.LastAttempt	= 0.0;
+	W.LastCountdown	= -1;		// forces the first countdown pulse immediately
 	W.AlliesAlive	= CountAliveAllies(PC);
 	W.RespawnAt		= Level.TimeSeconds + RespawnDelayFor(PC);
 
@@ -429,6 +449,7 @@ defaultproperties
 	BaseDelay=3.000000
 	DeathCamTime=1.000000
 	TeamFormula=True
+	Countdown=True
 	AffectInvasion=False
 	DelayTable="1,3 5,8 10,15"
 }

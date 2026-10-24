@@ -10,6 +10,10 @@ The delay is computed once when you die and stays locked until you respawn.
 | Team games (TDM, CTF, BR, DOM, ONS, AS...) | 1 ally alive → **3 s**, 5 allies → **8 s**, 10 allies → **15 s** (linear in between, clamped) |
 | Solo games (DM, LMS, ...) | **3 s** |
 
+While waiting you also get a live HUD countdown — "Respawn in 10, 9, 8, ..."
+— rendered only on the waiting player's screen (never in the chat log); the
+last 3 seconds turn huge and red.
+
 ## Build
 
 ```bash
@@ -40,15 +44,20 @@ BaseDelay=3.000000
 DelayTable="1,3 5,8 10,15"
 DeathCamTime=1.000000
 TeamFormula=True
+Countdown=True
 AffectInvasion=False
 ```
 
 * `DelayTable` — "alliesAlive,delaySeconds" pairs: fewer allies than the first
   anchor → first delay; more than the last → last delay; linear between.
+* `Countdown=False` hides the per-second HUD counter.
 * Console while dead: `mutate respawnstatus` — remaining seconds.
 * Two extras: `TeamFormula=False` forces `BaseDelay` everywhere;
   `AffectInvasion=True` applies delays on top of Invasion's wave respawn
   (off by default, the game already waits for the next wave).
+* Network play: add `ServerPackages=RespawnDelay` to `UT2004.ini`
+  `[Engine.GameEngine]` so joining clients can load the HUD message class
+  (local / instant-action / listen play needs nothing).
 
 ## Documentation
 

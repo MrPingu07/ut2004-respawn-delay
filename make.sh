@@ -24,6 +24,9 @@ ln -sfn "$PKG" "$GAME_ROOT/RespawnDelay"
 
 cd "$GAME_ROOT/System"
 
+# ucc make trusts an existing package binary; remove it to force a recompile
+rm -f RespawnDelay.u
+
 echo "== ucc make =="
 wine UCC.exe make 2>&1 | tail -30
 

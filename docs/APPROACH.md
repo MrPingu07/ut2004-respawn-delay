@@ -86,6 +86,30 @@ Announcements: the locked delay is sent via `PlayerController.ClientMessage`
 (server → client replication confirmed: `reliable if Role==ROLE_Authority ClientMessage`
 in PlayerController); `mutate respawnstatus` reports the remaining time.
 
+### Countdown HUD ("Respawn in 10, 9, 8, ...")
+
+While waiting, the mutator emits once per whole second
+`PC.ReceiveLocalizedMessage(class'RespawnDelayCountdown', SecondsLeft)`.
+
+That class (`RespawnDelay.RespawnDelayCountdown extends LocalMessage`) is
+configured for a clean, client-side-only display:
+
+| setting | value | effect |
+|---|---|---|
+| `bIsSpecial` | True | rendered as a positioned HUD message, not in the chat queue |
+| `bIsUnique`  | True | the new pulse **replaces** the previous one (HudBase.LocalizedMessage reuses the slot) — one always-fresh line ticking down |
+| `bIsConsoleMessage` | False | never written to the console/chat — other players see nothing |
+| `bBeep` | False | silent |
+| `LifeTime` | 1.25 s | until the next pulse |
+| position | PosX 0.5 / PosY 0.72, `DP_MiddleMiddle`, `SM_None` | centered, slightly below mid-screen |
+| font/color | Big, gold; `Switch <= 3` → Huge red | urgency cue |
+
+Because `GetString()` re-formats on the client and the server only sends a
+small integer, the whole counter costs ~0 bytes of chat bandwidth and is only
+visible to the affected player. The initial "locked delay" notice and the
+spectator hint remain one-shot `ClientMessage`s (once per death, not per
+second). Toggle the whole feature with the `Countdown` config var.
+
 ## Deliberate limitations (documented trade-offs)
 
 * **Bots** respawn with vanilla timing — the feature is player-centric and the
@@ -106,9 +130,10 @@ in PlayerController); `mutate respawnstatus` reports the remaining time.
 ## Files
 
 ```
-RespawnDelay/Classes/RespawnDelay.uc   the mutator (single class)
-RespawnDelay/RespawnDelay.int          registration + localized strings
-RespawnDelay/RespawnDelay.ucl          mutator-list registration
+RespawnDelay/Classes/RespawnDelay.uc           the mutator
+RespawnDelay/Classes/RespawnDelayCountdown.uc  the HUD countdown LocalMessage
+RespawnDelay/RespawnDelay.int                 registration + localized strings
+RespawnDelay/RespawnDelay.ucl                 mutator-list registration
 make.sh                                builds into the game dir via wine UCC make
 docs/FINDINGS.md                       engine research (with source references)
 docs/APPROACH.md                       this document
@@ -123,6 +148,7 @@ docs/APPROACH.md                       this document
 | `DelayTable` | `1,3 5,8 10,15` | team curve anchors (see above) |
 | `DeathCamTime` | 1.0 | vanilla death camera seconds before spectator mode |
 | `TeamFormula` | True | False = use BaseDelay in team games too |
+| `Countdown` | True | per-second HUD countdown while waiting |
 | `AffectInvasion` | False | apply delays in Invasion as well |
 
 ## Build & install

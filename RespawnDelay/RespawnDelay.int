@@ -11,3 +11,7 @@ MsgRespawnSolo="Respawn delay locked at %1 seconds"
 MsgSpectateHint="Waiting to respawn - FIRE: next player view, ALT-FIRE: own camera"
 MsgStatusWaiting="RespawnDelay: you respawn in %1 seconds"
 MsgStatusIdle="RespawnDelay: not waiting to respawn."
+
+[RespawnDelay.RespawnDelayCountdown]
+Label="Respawn in "
+FinalLabel="Respawn!"
