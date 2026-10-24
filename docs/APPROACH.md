@@ -49,20 +49,20 @@ The mutator (`RespawnDelay.RespawnDelay`) runs a **supervisor** on its own
    * solo games → `BaseDelay` (5 s)
    * team games → the global wave cycle (perfect synchronization):
 
-     waves land on every `Level.TimeSeconds` multiple of `BatchCycleLen`
+     waves land on every `Level.TimeSeconds` multiple of `ServerCycle`
      (5 s by default). At death the remaining time of the cycle picks the
      wave:
 
-     - **remain == BatchCycleLen** (died exactly on a boundary, i.e. the
-       cycle just started) → wait `BatchCycleLen` and spawn at the imminent
+     - **remain == ServerCycle** (died exactly on a boundary, i.e. the
+       cycle just started) → wait `ServerCycle` and spawn at the imminent
        wave (its closing boundary);
-     - **remain < BatchCycleLen** → pushed to the NEXT wave: wait =
-       `remain + BatchCycleLen`, so everyone dead within a cycle spawns
+     - **remain < ServerCycle** → pushed to the NEXT wave: wait =
+       `remain + ServerCycle`, so everyone dead within a cycle spawns
        together on the closing boundary of the next cycle.
 
-     Every `RespawnAt` is an exact `BatchCycleLen` multiple of the server
+     Every `RespawnAt` is an exact `ServerCycle` multiple of the server
      clock — synchronized batches by construction — and waits are always
-     within `[BatchCycleLen, 2*BatchCycleLen]` (5–10 s with the default).
+     within `[ServerCycle, 2*ServerCycle]` (5–10 s with the default).
      The value is stored as `RespawnAt = DiedAt + delay` and **never
      recomputed** until respawn.
 3. **Spectator mode** — after `DeathCamTime`, the controller is moved exactly
@@ -180,12 +180,35 @@ docs/APPROACH.md                       this document
 |---|---|---|
 | `Enabled` | True | master switch (applied between matches) |
 | `BaseDelay` | 5.0 | seconds in solo (non-team) games |
-| `BatchCycleLen` | 5.0 | team games only: global wave cycle length; waits span one to two cycles |
+| `ServerCycle` | 5.0 | team games only: global wave cycle length; waits span one to two cycles. Exposed in the **Mutator GUI** as a 5-preset dropdown ("Arena [2s]", "Blitz [3s]", "Standard [5s]", "Strategic [7s]", "Tactical [10s]") |
 | `DeathCamTime` | 1.0 | vanilla death camera seconds before spectator mode |
 | `Countdown` | True | per-second HUD countdown while waiting |
 | `AffectBots` | True | apply the rules to bots as well |
 | `AffectInvasion` | False | apply delays in Invasion as well |
 | `AffectAssault` | True | take respawn authority in Assault (disables the vanilla reinforcement waves); False = hands-off in Assault |
+
+### Mutator GUI (PlayInfo)
+
+`FillPlayInfo()` adds one *Select* (dropdown) control so server admins pick a
+wave-cycle preset on the mutator "Configure"/admin Rules pages:
+
+* `PlayInfo.AddSetting(default.RespGroup, "ServerCycle", GetDisplayText(...),
+  0, 1, "Select", default.CyclePresetText)` — the Extras string is
+  `"2.000000;Arena [2s];3.000000;Blitz [3s];5.000000;Standard [5s];
+  7.000000;Strategic [7s];10.000000;Tactical [10s]"` (value;Label pairs,
+  exactly like the engine's own GameDifficulty dropdown). The labels come out
+  of `RespawnDelay.int` (`RespGroup`, `CycleDisplayText`, `CycleDescText`,
+  `CyclePresetText`).
+* The value strings are formatted as full six-decimal floats on purpose: the
+  GUI re-matches the value stored in the ini (`5.000000`) against those pairs
+  to highlight the current preset, and stores the selected pair value back
+  via `PlayInfo.StoreSetting`.
+* The per-control tooltip (`CycleDescText`) lists every preset's wait range,
+  since UT2004's rules GUI supports only one static hint per control — per
+  option tooltips do not exist.
+* Selecting a preset simply rewrites `ServerCycle=...` into
+  `[RespawnDelay.RespawnDelay]` under `UT2004.ini`; the wave math reads the
+  variable live at death time, so changes apply to the next deaths.
 
 ## Build & install
 
@@ -206,10 +229,11 @@ docs/APPROACH.md                       this document
    - `_ "FIRE"` cycles, AltFire returns to own camera
    - console message shows the locked delay; respawn happens only after it
    - `mutate respawnstatus` while waiting prints the remaining time
-2. Team games: everyone dying within the same 5 s cycle shows counts that all
+2. Team games: everyone dying within the same cycle shows counts that all
    hit 0 within the same half-second and respawn together at the next wave's
-   boundary; waits never fall outside 5–10 s. Watch a full wave: several
-   players/bots popping at (almost) the same instant, then silence.
+   boundary; waits never fall outside one to two cycles (5–10 s by default).
+   Watch a full wave: several players/bots popping at (almost) the same
+   instant, then silence.
 3. Solo DM: every death waits the full 5 s regardless of timing.
 4. Bots: kill a bot → it should not reappear before its delay; simplest check
    is relative respawn timing (yours vs. the bots'), and bots fighting again
@@ -224,3 +248,8 @@ docs/APPROACH.md                       this document
    (`BaseDelay=5.00` in the startup log). Note a headless dedicated server
    never starts a match without a real client connected (`PendingMatch`
    waits for `NumPlayers > 0`), so respawn flows need a live client to test.
+7. Mutator GUI: Instant Action or Lan game → Mutators → pick Respawn Delay →
+   "Configure" → the "Respawn wave cycle" dropdown shows the five presets,
+   choosing one (e.g. Tactical [10s]) writes `ServerCycle=10.000000` into
+   `UT2004.ini` `[RespawnDelay.RespawnDelay]`, and the next team match runs
+   10–20 s waits. Check the startup log line (`wave cycle=10.00`).

@@ -75,8 +75,12 @@ var() config bool	Enabled;
 /** Respawn delay (seconds) in non team games. Team games use the batch cycle instead. */
 var() config float	BaseDelay;
 
-/** Team mode: length of the global reinforcement cycle (seconds); waves land on its multiples. */
-var() config float	BatchCycleLen;
+/**
+ * Team mode: length of the global reinforcement cycle (seconds); waves land on
+ * its multiples. Configurable in the Mutator GUI as one of five presets
+ * ("Arena", "Blitz", "Standard", "Strategic", "Tactical").
+ */
+var() config float	ServerCycle;
 
 /** Seconds still spent in the vanilla death camera before spectator mode starts. */
 var() config float	DeathCamTime;
@@ -116,6 +120,18 @@ var localized string	MsgRespawnSolo;		// "%1" number of seconds
 var localized string	MsgSpectateHint;
 var localized string	MsgStatusWaiting;	// "%1" the seconds remaining
 var localized string	MsgStatusIdle;
+
+// -- mutator GUI (PlayInfo / "Configure" pages) ------------------------------
+// Rendered by UT2004's mutator configuration pages ("Configure" button after
+// picking the mutator, and the admin Rules page). One single dropdown Select
+// control whose Extras string is a "value;Label" pair list: the engine shows
+// the labels and stores the value into `ServerCycle`. The value strings use
+// the full "5.000000" float format on purpose: the GUI re-matches the ini's
+// stored value against those pairs to highlight the current preset.
+var() localized string	RespGroup;		// group header shown above the control
+var() localized string	CycleDisplayText;	// name of the dropdown control
+var() localized string	CycleDescText;		// tooltip of the dropdown control
+var() localized string	CyclePresetText;	// "value;Label;value;Label;..." pairs
 
 // ---------------------------------------------------------------------------
 // Internal state
@@ -172,7 +188,7 @@ function PostBeginPlay()
 	SetTimer(0.05, true);
 
 	log("RespawnDelay enabled ("$Level.Game$" team="$Level.Game.bTeamGame$")"
-		@"solo delay="$BaseDelay@"wave cycle="$BatchCycleLen, 'RespawnDelay');
+		@"solo delay="$BaseDelay@"wave cycle="$ServerCycle, 'RespawnDelay');
 }
 
 // ---------------------------------------------------------------------------
@@ -181,7 +197,7 @@ function PostBeginPlay()
 
 /**
  * Seconds still left in the current batch cycle. Cycles are counted on the
- * global server clock: every Level.TimeSeconds multiple of BatchCycleLen is a
+ * global server clock: every Level.TimeSeconds multiple of ServerCycle is a
  * batch boundary.
  */
 function float CycleRemaining()
@@ -190,8 +206,8 @@ function float CycleRemaining()
 
 	// Level.TimeSeconds is the plain server clock (running from ~0 at map
 	// load); int() truncation gives the current cycle index.
-	Offset = Level.TimeSeconds - (BatchCycleLen * float(int(Level.TimeSeconds / BatchCycleLen)));
-	return FMax(0.0, BatchCycleLen - Offset);
+	Offset = Level.TimeSeconds - (ServerCycle * float(int(Level.TimeSeconds / ServerCycle)));
+	return FMax(0.0, ServerCycle - Offset);
 }
 
 /**
@@ -199,32 +215,32 @@ function float CycleRemaining()
  * until respawn.
  *
  * Team games - perfect batch alignment on the global cycle:
- *   - dying exactly on a cycle boundary (TimeRemaining == BatchCycleLen,
- *     the cycle has just started) -> wait exactly BatchCycleLen seconds and
+ *   - dying exactly on a cycle boundary (TimeRemaining == ServerCycle,
+ *     the cycle has just started) -> wait exactly ServerCycle seconds and
  *     spawn at the end of the current cycle;
  *   - dying anywhere else -> pushed to the NEXT wave: wait =
- *     TimeRemaining + BatchCycleLen, i.e. the whole cycle's dead spawn
+ *     TimeRemaining + ServerCycle, i.e. the whole cycle's dead spawn
  *     together on the closing boundary of the next cycle.
  *
- * Every respawn therefore lands exactly on a BatchCycleLen multiple of the
+ * Every respawn therefore lands exactly on a ServerCycle multiple of the
  * server clock (synchronized batches), and waits are always within
- * [BatchCycleLen, 2*BatchCycleLen] = 5-10 s with the default 5 s cycle.
+ * [ServerCycle, 2*ServerCycle] = 5-10 s with the default 5 s cycle.
  * Solo games (no batching): plain BaseDelay.
  */
 function float RespawnDelayFor(Controller C)
 {
 	local float Remain;
 
-	if ( Level.Game != None && Level.Game.bTeamGame && BatchCycleLen > 0 )
+	if ( Level.Game != None && Level.Game.bTeamGame && ServerCycle > 0 )
 	{
 		Remain = CycleRemaining();
-		if ( Remain >= BatchCycleLen )		// died exactly on a boundary
-			return BatchCycleLen;
+		if ( Remain >= ServerCycle )		// died exactly on a boundary
+			return ServerCycle;
 
-		// pushed to the next wave; RespawnAt = DiedAt + Remain + BatchCycleLen
+		// pushed to the next wave; RespawnAt = DiedAt + Remain + ServerCycle
 		// is an exact cycle multiple again (float-rounding aside), so the
 		// whole batch spawns in the same tick.
-		return Remain + BatchCycleLen;
+		return Remain + ServerCycle;
 	}
 
 	return BaseDelay;
@@ -522,6 +538,34 @@ function Mutate(string MutateString, PlayerController Sender)
 }
 
 // ---------------------------------------------------------------------------
+// Mutator GUI (PlayInfo): the "Respawn wave cycle" preset dropdown
+// ---------------------------------------------------------------------------
+
+static function FillPlayInfo(PlayInfo PlayInfo)
+{
+	Super.FillPlayInfo(PlayInfo);	// always begin with calling the parent
+
+	PlayInfo.AddSetting(default.RespGroup, "ServerCycle",
+		GetDisplayText("ServerCycle"), 0, 1, "Select", default.CyclePresetText);
+}
+
+static function string GetDisplayText(string PropName)
+{
+	if ( PropName ~= "ServerCycle" )
+		return default.CycleDisplayText;
+
+	return "";
+}
+
+static event string GetDescriptionText(string PropName)
+{
+	if ( PropName ~= "ServerCycle" )
+		return default.CycleDescText;
+
+	return "";
+}
+
+// ---------------------------------------------------------------------------
 // Defaults
 // ---------------------------------------------------------------------------
 
@@ -529,10 +573,14 @@ defaultproperties
 {
 	Enabled=True
 	BaseDelay=5.000000
-	BatchCycleLen=5.000000
+	ServerCycle=5.000000
 	DeathCamTime=1.000000
 	Countdown=True
 	AffectBots=True
 	AffectInvasion=False
 	AffectAssault=True
+	RespGroup="Respawn Delay"
+	CycleDisplayText="Respawn wave cycle"
+	CycleDescText="Server wave cycle for team games: everyone dying within a wave respawns together at the end of the next one, and waits always span one to two cycles. Arena 2s: continuous chaos (2-4s waits). Blitz 3s: frenetic micro-batches (3-6s). Standard 5s: competitive balance (5-10s). Strategic 7s: large pushing waves (7-14s). Tactical 10s: heavy combat simulation (10-20s)."
+	CyclePresetText="2.000000;Arena [2s];3.000000;Blitz [3s];5.000000;Standard [5s];7.000000;Strategic [7s];10.000000;Tactical [10s]"
 }
