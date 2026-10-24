@@ -152,9 +152,9 @@ second). Toggle the whole feature with the `Countdown` config var.
   inside the ≤ 1 s death-camera window (it bypasses `bFrozen`). In practice
   DeathCamTime ≤ the bFrozen window makes ours switch first; worst case a
   bForceRespawn player sneaks out up to ~1 s early.
-* **Assault "reinforcements"** (`PRI.bAutoRespawn`) call `RestartPlayer`
-  directly and bypass the gate; players that explicitly enabled auto-respawn
-  in Assault respawn on the vanilla reinforcement tick.
+* **Assault**: reinforcements disabled at match start (`AffectAssault=True`,
+  default) so the mutator governs respawns; with it off, the mutator is
+  hands-off in Assault.
 * **Invasion** is skipped by default (wave logic already delays respawn);
   `AffectInvasion=True` piles the delay on top. `AffectBots` applies to
   Invasion too when forced.
@@ -185,6 +185,7 @@ docs/APPROACH.md                       this document
 | `Countdown` | True | per-second HUD countdown while waiting |
 | `AffectBots` | True | apply the delay to bots as well |
 | `AffectInvasion` | False | apply delays in Invasion as well |
+| `AffectAssault` | True | take respawn authority in Assault (disables the vanilla reinforcement waves); False = hands-off in Assault |
 
 ## Build & install
 

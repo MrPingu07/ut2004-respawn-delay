@@ -24,6 +24,11 @@
 //    into 'Roaming', i.e. the exact vanilla wake-up path. Respawnless game
 //    modes (Invasion's bOutOfLives waves) are excluded (AffectInvasion).
 //
+//  * Assault uses its own "reinforcements" machinery (batch respawn waves +
+//    PlayerCanRestart refusals between waves + tuned bot SpawnWait). AffectAssault
+//    (default) turns reinforcements off at match start (ASGameInfo.bDisableReinforcements)
+//    so this mutator fully governs Assault respawns instead.
+//
 //  * While waiting, players are put in the vanilla 'Spectating' state:
 //      FIRE            cycles the camera through the players allowed by the
 //                      game type (own team members in team games, every
@@ -97,6 +102,17 @@ var() config bool	AffectBots;
  */
 var() config bool	AffectInvasion;
 
+/**
+ * Assault runs its own "reinforcements" respawn waves: PlayerCanRestart()
+ * refuses respawns between waves, dead players with ASPlayerReplicationInfo
+ * bAutoRespawn are batch-respawned, and bot SpawnWait() is wave-tuned.
+ * With AffectAssault enabled (default) the mutator disables that machinery
+ * (ASGameInfo.bDisableReinforcements = true) at match start and governs
+ * Assault respawns itself. Leave disabled to keep vanilla Assault waves -
+ * the mutator then stays completely hands-off in Assault.
+ */
+var() config bool	AffectAssault;
+
 // ---------------------------------------------------------------------------
 // Localization (see RespawnDelay.int)
 // ---------------------------------------------------------------------------
@@ -129,6 +145,10 @@ var array<TWaitingPlayer>	Waiting;
 var array<float>			CurveN;		// "alive allies" breakpoints
 var array<float>			CurveT;		// "delay seconds" breakpoints
 
+// game-type knobs, cached once at PostBeginPlay
+var bool					bIsAssault;		// running ASGameInfo
+var bool					bGameExcluded;	// the game manages respawns itself (Invasion, or Assault with AffectAssault=False)
+
 // ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
@@ -138,6 +158,26 @@ function PostBeginPlay()
 	Super.PostBeginPlay();
 
 	ParseDelayTable();
+
+	// Assault: the game runs its own reinforcement waves that would co-govern
+	// respawns. With AffectAssault enabled, shut them off so the delay here is
+	// the only respawn authority; if disabled, stay hands-off in Assault.
+	if ( Level.Game != None && Level.Game.IsA('ASGameInfo') )
+	{
+		bIsAssault = true;
+		if ( AffectAssault )
+		{
+			ASGameInfo(Level.Game).bDisableReinforcements = true;
+			log("RespawnDelay: Assault reinforcements disabled (mutator governs respawns)", 'RespawnDelay');
+		}
+		else
+		{
+			bGameExcluded = true;
+			log("RespawnDelay: Assault left to vanilla reinforcements (mutator inactive here)", 'RespawnDelay');
+		}
+	}
+	else if ( Level.Game != None && Level.Game.IsA('Invasion') && !AffectInvasion )
+		bGameExcluded = true;
 
 	// supervisor: 20 checks per second is plenty, the loops are trivial
 	SetTimer(0.05, true);
@@ -324,6 +364,17 @@ function Timer()
 		{
 			B = Bot(C);
 
+			// Assault round transition: the game takes every controller to
+			// 'RoundEnded' (the same state we park bots in) and resets/spawns
+			// them at round start - hand this bot back so the round machinery
+			// owns it.
+			if ( bIsAssault && ASGameInfo(Level.Game).ResetCountDown != 0 )
+			{
+				B.GotoState('Dead');
+				Waiting.Remove(i, 1);
+				continue;
+			}
+
 			// the game moved the bot out of our parking spot (round
 			// transition, ...): hand it back and trust vanilla
 			if ( !B.IsInState('RoundEnded') && !B.IsInState('Dead') )
@@ -423,9 +474,8 @@ function Timer()
 			continue;
 		if ( GetWaitingIndex(C) >= 0 )
 			continue;
-		if ( Level.Game.IsA('Invasion') && !AffectInvasion )
+		if ( bGameExcluded )
 			continue;
-
 		PC = PlayerController(C);
 		if ( PC != None )
 		{
@@ -577,5 +627,6 @@ defaultproperties
 	Countdown=True
 	AffectBots=True
 	AffectInvasion=False
+	AffectAssault=True
 	DelayTable="1,3 5,8 10,15"
 }

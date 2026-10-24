@@ -17,6 +17,11 @@ While waiting you also get a live HUD countdown — "Respawn in 10, 9, 8, ..."
 in white; the last 3 seconds are shown in a huge font. The number is scrubbed
 from the screen the moment you respawn, so no stale counter ever survives.
 
+**Assault**: the game type's vanilla "reinforcements" (respawn waves every
+`ReinforcementsFreq` seconds, respawns refused between waves) are disabled at
+match start, so the same delay rules apply there (`AffectAssault=True`; set
+it false to keep vanilla waves and have the mutator stay off in Assault).
+
 ## Build
 
 ```bash
@@ -50,14 +55,17 @@ TeamFormula=True
 Countdown=True
 AffectBots=True
 AffectInvasion=False
+AffectAssault=True
 ```
 
 * `DelayTable` — "alliesAlive,delaySeconds" pairs: fewer allies than the first
   anchor → first delay; more than the last → last delay; linear between.
 * `Countdown=False` hides the per-second HUD counter.
 * Console while dead: `mutate respawnstatus` — remaining seconds.
-* Three extras: `TeamFormula=False` forces `BaseDelay` everywhere;
+* Extras: `TeamFormula=False` forces `BaseDelay` everywhere;
   `AffectBots=False` leaves bots on their vanilla (instant) respawn;
+  `AffectAssault=False` keeps Assault's vanilla reinforcement waves (the
+  mutator stays inactive in Assault then);
   `AffectInvasion=True` applies delays on top of Invasion's wave respawn
   (off by default, the game already waits for the next wave).
 * Network play: add `ServerPackages=RespawnDelay` to `UT2004.ini`

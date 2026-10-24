@@ -113,10 +113,29 @@ state Spectating extends BaseSpectating
 
 ## 5. Special game types
 
-* **Assault** (`UT2k4Assault/ASGameInfo.uc:255`): `state MatchInProgress.Timer`
-  auto-respawns players who had `ASPlayerReplicationInfo.bAutoRespawn` set
-  ("reinforcements"), by calling `GameInfo.RestartPlayer(PC)` directly.
-  Those respawn *bypass* any attempted block — documented limitation.
+* **Assault** (`UT2k4Assault/ASGameInfo.uc`) runs its own respawn machinery,
+  "reinforcements" — three levers, all keyed off `ASGameInfo.bDisableReinforcements`
+  (plain bool, ASGameInfo.uc:34):
+  - `state MatchInProgress.Timer` (line ~249) batch-respawns every dead
+    controller whose `ASPlayerReplicationInfo.bAutoRespawn` is set every
+    `ReinforcementsFreq` seconds;
+  - `PlayerCanRestart()` (line ~327) *refuses* respawns between reinforcement
+    waves and pro-actively marks dead players `bAutoRespawn=true` — this is
+    where Assault "takes control" of respawn timing;
+  - `SpawnWait()` (line ~318) returns wave-tuned waits for bots so they
+    respawn on the waves as well.
+  With `bDisableReinforcements = true` all three fall back to vanilla
+  (restarts allowed anytime, no batches, `SpawnWait` = `super`), and the
+  mutator becomes the only respawn authority. It sets the flag once in
+  `PostBeginPlay` when `AffectAssault` is on (default); with `AffectAssault`
+  off the mutator stays completely hands-off in Assault instead.
+  Round transitions: at `StartNewRound` the game moves **all** controllers to
+  `state RoundEnded` (ASGameInfo around line 465/684) and respawns everyone
+  at round start (`ResetLevel` → `Controller.Reset()`; bots additionally
+  leave via `Bot.Reset() → GotoState('Dead')`). The mutator therefore drops
+  its bot entries while `ResetCountDown != 0` so the round machinery owns
+  the controller; the landed `ResetCountDown` check also prevents spawning a
+  bot in the middle of a round transition.
 * **Invasion** (`SkaarjPack/Invasion.uc`): dead players get `PRI.bOutOfLives = true`
   at death (line 200) and can only spawn at the next wave
   (line 663: `C.ServerReStartPlayer()`). The wave logic already gates respawn;
