@@ -82,6 +82,20 @@ The mutator (`RespawnDelay.RespawnDelay`) runs a **supervisor** on its own
    returns the PC to `state PlayerWalking`. Attempts are rate-limited
    (0.5 s) and an entry is only dropped once `PC.Pawn != None` (a silent
    failure, e.g. late-comer rules, just retries).
+   * **Network clients: paired GotoState/ClientGotoState.** `state Spectating`
+     has `ClientRestart` in its *ignores* list, so a client still sitting in
+     Spectating would silently drop the replicated `ClientRestart()` that the
+     respawn sends (see [FINDINGS.md](FINDINGS.md) §8): it would stay glued to
+     the spectated pawn until that pawn died, and never re-sync its weapon (no
+     viewmodel in first person). Therefore every state hand-over is paired
+     server+client, exactly the pattern the engine uses itself
+     (`RestartPlayer`'s failure path, `AskForPawn()`):
+     - spectate: server `GotoState('Spectating')` + `ClientGotoState('Spectating')`
+     - respawn: `ClientGotoState('PlayerWalking')` **before**
+       `RestartPlayer(PC)` — ClientGotoState and the later ClientRestart share
+       one reliable channel and are applied in order, so the hand-over works
+     - escape hatch (30 failed restarts): `GotoState('Dead')` +
+       `ClientGotoState('Dead')`
 5. **Bots are parked, not spectated** — a dying bot has no spectator mode
    (`AIController` has no camera/AI in that state). Instead the bot is moved
    out of its own respawn loop *at registration* by
@@ -248,6 +262,17 @@ wave-cycle preset on the mutator "Configure"/admin Rules pages:
    (`BaseDelay=5.00` in the startup log). Note a headless dedicated server
    never starts a match without a real client connected (`PendingMatch`
    waits for `NumPlayers > 0`), so respawn flows need a live client to test.
+7. Mutator GUI: Instant Action or Lan game → Mutators → pick Respawn Delay →
+   "Configure" → the "Respawn wave cycle" dropdown shows the five presets,
+   choosing one (e.g. Tactical [15s]) writes `ServerCycle=15.000000` into
+   `UT2004.ini` `[RespawnDelay.RespawnDelay]`, and the next team match runs
+   15–30 s waits. Check the startup log line (`wave cycle=15.00`).
+8. **Network client** (dedicated server + a second machine/client, per
+   FINDINGS §8): die → watch a team-mate through the wait → at RespawnAt the
+   view must switch back to the own pawn, in first person with the weapon in
+   hand, without waiting for the watched player's death; `mutate respawnstatus`
+   prints a remaining time > 0 during the whole wait; FIRE cycles views, not
+   respawn.
 7. Mutator GUI: Instant Action or Lan game → Mutators → pick Respawn Delay →
    "Configure" → the "Respawn wave cycle" dropdown shows the five presets,
    choosing one (e.g. Tactical [15s]) writes `ServerCycle=15.000000` into

@@ -58,6 +58,17 @@
 //       GameInfo.PlayerCanRestart() and GameInfo.RestartPlayer(), i.e. the
 //       exact vanilla respawn routine (bots get RestartPlayer() directly,
 //       exactly what vanilla Bot "state Dead" does).
+//    3b. Network clients must be driven out of 'Spectating' on BOTH sides at
+//       respawn: state 'Spectating' has ClientRestart in its ignores list
+//       (PlayerController.uc), so a client still sitting in Spectating
+//       silently drops the replicated ClientRestart() that Possess()/Restart()
+//       sends for the respawn. It would then stay glued to the spectated pawn
+//       (only freed when that pawn dies) and never re-sync its weapon
+//       inventory (no viewmodel in first person). The supervisor therefore
+//       pairs every server-side GotoState with ClientGotoState - the same
+//       pattern the engine uses itself (GameInfo.RestartPlayer's failure
+//       path, AskForPawn()); reliable calls on one channel are applied in
+//       order, so the client leaves Spectating before ClientRestart lands.
 //    4. Every waiting entry is dropped the moment the condition changes and a
 //       stale HUD countdown is killed with a "clear" localized message
 //       (Switch < 0 renders an empty string), so no number can outlive a wait.
@@ -372,7 +383,20 @@ function Timer()
 				Waiting[i].LastAttempt	= Level.TimeSeconds;
 				Waiting[i].Tries		+= 1;
 				if ( Level.Game.PlayerCanRestart(PC) )
+				{
+					// Network-critical: state 'Spectating' has ClientRestart in
+					// its ignores list, so a client still sitting in Spectating
+					// silently swallows the ClientRestart() the respawn sends
+					// - it never leaves the spectator view (stuck until the
+					// viewed pawn dies) and never re-syncs its weapon (no
+					// viewmodel in first person). Leave Spectating on the
+					// CLIENT first: ClientGotoState and the later ClientRestart
+					// ride the same reliable channel and are applied in order,
+					// so the hand-over works. Same pairing the engine itself
+					// uses (RestartPlayer failure path, AskForPawn()).
+					PC.ClientGotoState('PlayerWalking', 'Begin');
 					Level.Game.RestartPlayer(PC);
+				}
 				// entry is dropped automatically once PC.Pawn != None
 
 				// respawn keeps failing (must join before start, ...):
@@ -381,6 +405,10 @@ function Timer()
 				{
 					ClearCountdown(i);
 					PC.GotoState('Dead');
+					// keep the client in step (ClientGotoState pairing, see the
+					// respawn branch above) so its FIRE -> ServerRestartPlayer
+					// works again afterwards
+					PC.ClientGotoState('Dead', 'Begin');
 					Waiting.Remove(i, 1);
 				}
 			}
@@ -501,6 +529,10 @@ function StartSpectating(PlayerController PC)
 	PC.SetTimer(0.0, false);
 
 	PC.GotoState('Spectating');
+	// keep the client in step: force spectating on the client too (the
+	// engine does the same in AskForPawn() for Spectating controllers) so
+	// the FIRE/ALT-FIRE view execs exist there as well
+	PC.ClientGotoState('Spectating', 'Begin');
 	PC.bBehindView	= true;
 	PC.ServerViewNextPlayer();
 

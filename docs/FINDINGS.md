@@ -191,7 +191,44 @@ reported "frozen number that only disappears when you die". Fix:
 (`Switch < 0`, GetString returns an empty string) sent by the mutator whenever
 a waiting player's entry is dropped.
 
-## 8. Environment of this install
+## 8. Network clients in 'state Spectating' silently drop ClientRestart (trap)
+
+The trap that broke every client-side symptom (stuck-overdue respawn, respawn
+only after the *viewed* pawn died, missing viewmodels in first person):
+
+* `state Spectating` for PlayerController ignores `ClientRestart`
+  (Engine/PlayerController.uc:5723):
+  `ignores SwitchWeapon, RestartLevel, ClientRestart, Suicide, ...`
+* The ONLY client-side respawn hand-over is the reliable replicated
+  `PlayerController.ClientRestart(Pawn)` (Engine/PlayerController.uc:3640),
+  called by `Restart()` (3617) inside `Possess()`. It performs
+  `SetViewTarget(Pawn)`, `bBehindView = Pawn.PointOfView()`,
+  `Pawn.ClientRestart()` (weapon/inventory re-sync) and `EnterStartState()`.
+* When the respawn is triggered while the client's controller is *also* sitting
+  in `state Spectating`, that `ClientRestart()` is discarded client-side
+  (ignored functions are not dispatched). Result: the client never leaves
+  Spectating, keeps the spectated `ViewTarget` until that pawn dies
+  (invalidation is what finally frees the camera), and never re-syncs its
+  weapon -> no viewmodel in first person. Server-side everything already
+  respawned fine.
+* Vanilla avoids this because humans only respawn from `state Dead`
+  (does not ignore ClientRestart); vanilla Spectating players are out for good,
+  so vanilla never respawns out of Spectating in netgames.
+* The engine's own remedy is the server/goto **ClientGotoState pairing**:
+  GameInfo.RestartPlayer's failure path (Engine/GameInfo.uc:1360-1362) and
+  AskForPawn() (Engine/PlayerController.uc:856-860) both send
+  `PC.ClientGotoState(...)` next to a server GotoState. `ClientGotoState` and
+  `ClientRestart` share one reliable channel
+  (`reliable if (Role==ROLE_Authority)`, PlayerController.uc:361-367) and are
+  applied in order: leaving Spectating first makes the following
+  `ClientRestart()` dispatched again.
+* `EnterStartState()` (PlayerController.uc:3621) explicitly supports the case
+  with `if (IsInState(NewState)) BeginState(); else GotoState(NewState);` -
+  pre-empting the client into 'PlayerWalking' right before RestartPlayer is
+  engine-sanctioned, and ClientRestart recomputes the real start state
+  (water -> 'PlayerSwimming') for the spawned pawn afterwards.
+
+## 9. Environment of this install
 
 * Windows build running through wine 11.20-staging; `wine UCC.exe make` works
   (cwd = game `System/`).
