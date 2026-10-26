@@ -31,7 +31,7 @@ The mutator (`RespawnDelay.RespawnDelay`) runs a **supervisor** on its own
 
 ```
 [alive] --death--> [state Dead: vanilla death camera, DeathCamTime]
-        --cam over--> [state Spectating: free cam + FIRE cycles views]
+        --max(DeathCamTime, SpectateDelay)--> [state Spectating: free cam + FIRE cycles views]
         --locked time reached--> [GameInfo.RestartPlayer(PC) -> state PlayerWalking]
 ```
 
@@ -65,8 +65,9 @@ The mutator (`RespawnDelay.RespawnDelay`) runs a **supervisor** on its own
      within `[ServerCycle, 2*ServerCycle]` (5–10 s with the default).
      The value is stored as `RespawnAt = DiedAt + delay` and **never
      recomputed** until respawn.
-3. **Spectator mode** — after `DeathCamTime`, the controller is moved exactly
-   the way vanilla LMS does (`UnrealPlayer.ServerSpectate`):
+3. **Spectator mode** — after `max(DeathCamTime, SpectateDelay)` (default
+   3.0 s via `SpectateDelay`), the controller is moved exactly the way vanilla
+   LMS does (`UnrealPlayer.ServerSpectate`):
    `GotoState('Spectating')`, `bBehindView = true`,
    `ServerViewNextPlayer()`. Remaining frozen/jump flags from the death camera
    are cleared, the controller's pending Timer cancelled.
@@ -196,6 +197,7 @@ docs/APPROACH.md                       this document
 | `BaseDelay` | 5.0 | seconds in solo (non-team) games |
 | `ServerCycle` | 5.0 | team games only: global wave cycle length; waits span one to two cycles. Exposed in the **Mutator GUI** as a 5-preset dropdown ("Arena [2s]", "Blitz [3s]", "Standard [5s]", "Strategic [10s]", "Tactical [15s]") |
 | `DeathCamTime` | 1.0 | vanilla death camera seconds before spectator mode |
+| `SpectateDelay` | 3.0 | seconds after death before spectator mode starts; spectating begins at `max(DeathCamTime, SpectateDelay)` so players stay in the death camera longer |
 | `Countdown` | True | per-second HUD countdown while waiting |
 | `AffectBots` | True | apply the rules to bots as well |
 | `AffectInvasion` | False | apply delays in Invasion as well |
@@ -239,7 +241,8 @@ wave-cycle preset on the mutator "Configure"/admin Rules pages:
 ## Test checklist (manual, in-game)
 
 1. DM/TDM with a few bots:
-   - die → death camera ≈ 1 s → spectator fly view on a player
+   - die → death camera ≈ 1 s → spectator fly view on a player only after the
+     `SpectateDelay` (3 s default) has elapsed
    - `_ "FIRE"` cycles, AltFire returns to own camera
    - console message shows the locked delay; respawn happens only after it
    - `mutate respawnstatus` while waiting prints the remaining time

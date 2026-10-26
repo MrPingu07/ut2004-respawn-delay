@@ -96,6 +96,14 @@ var() config float	ServerCycle;
 /** Seconds still spent in the vanilla death camera before spectator mode starts. */
 var() config float	DeathCamTime;
 
+/**
+ * Seconds after death before spectator mode starts. Spectating is held off
+ * until max(DeathCamTime, SpectateDelay) so dead players stay in the death
+ * camera / dead state a bit longer instead of being dropped into spectator
+ * view right away.
+ */
+var() config float	SpectateDelay;
+
 /** Show a per-second HUD countdown while waiting (only visible to the waiting player). */
 var() config bool	Countdown;
 
@@ -413,9 +421,10 @@ function Timer()
 				}
 			}
 		}
-		else if ( Level.TimeSeconds - Waiting[i].DiedAt >= DeathCamTime )
+		else if ( Level.TimeSeconds - Waiting[i].DiedAt >= FMax(DeathCamTime, SpectateDelay) )
 		{
-			// death camera over -> vanilla spectator mode
+			// death camera (DeathCamTime) and the spectate hold-off
+			// (SpectateDelay) both over -> vanilla spectator mode
 			StartSpectating(PC);
 		}
 	}
@@ -607,6 +616,7 @@ defaultproperties
 	BaseDelay=5.000000
 	ServerCycle=5.000000
 	DeathCamTime=1.000000
+	SpectateDelay=3.000000
 	Countdown=True
 	AffectBots=True
 	AffectInvasion=False

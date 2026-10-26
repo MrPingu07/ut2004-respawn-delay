@@ -55,6 +55,7 @@ Enabled=True
 BaseDelay=5.000000
 ServerCycle=5.000000
 DeathCamTime=1.000000
+SpectateDelay=3.000000
 Countdown=True
 AffectBots=True
 AffectInvasion=False
@@ -74,6 +75,9 @@ AffectAssault=True
   | Strategic [10s] | 10 s | 10–20 s | semi-tactical pacing; forces defenders to group into large waves before pushing |
   | Tactical [15s] | 15 s | 15–30 s | heavy combat simulation; teams respawn in full battalions for macro maps with heavy vehicles |
 * `Countdown=False` hides the per-second HUD counter.
+* `SpectateDelay=3.0` keeps dead players out of spectator mode (and in the
+  death camera) for 3 seconds after dying, so spectating doesn't start too
+  early. Spectating begins at `max(DeathCamTime, SpectateDelay)`.
 * Console while dead: `mutate respawnstatus` — remaining seconds.
 * Extras: `BaseDelay` is the solo-mode wait; `AffectBots=False` leaves bots on
   their vanilla (instant) respawn; `AffectAssault=False` keeps Assault's
