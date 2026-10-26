@@ -1,0 +1,28 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Zip source tree
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          zip -r "RespawnDelay-${version}.zip" . \
+            -x '.git/*' '.github/*' '*.git*'
+
+      - name: Create GitHub release and upload .zip asset
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            "RespawnDelay-${version}.zip" \
+            --title "RespawnDelay ${version}" \
+            --generate-notes
