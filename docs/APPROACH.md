@@ -214,7 +214,7 @@ docs/APPROACH.md                       this document
 |---|---|---|
 | `Enabled` | True | master switch (applied between matches) |
 | `BaseDelay` | 5.0 | fallback respawn delay for solo (non-team) games when `ServerCycle <= 0` |
-| `ServerCycle` | 5.0 | global wave cycle length (team games) and plain respawn wait (solo games); waits span one to two cycles in team games. Exposed in the **Mutator GUI** as a 5-preset dropdown ("Arena [3s]", "Standard [5s]", "Methodic [10s]", "Strategic [15s]", "Tactical [30s]") |
+| `ServerCycle` | 5.0 | global wave cycle length (team games) and plain respawn wait (solo games); waits span one to two cycles in team games. Exposed in the **Mutator GUI** as a 5-preset dropdown ("Arena [3-6s]", "Standard [5-10s]", "Methodic [10-20s]", "Strategic [15-30s]", "Tactical [30-60s]") |
 | `DeathCamTime` | 1.0 | vanilla death camera seconds before spectator mode |
 | `SpectateDelay` | 3.0 | seconds after death before spectator mode starts; spectating begins at `max(DeathCamTime, SpectateDelay)` so players stay in the death camera longer |
 | `Countdown` | True | per-second HUD countdown while waiting |
@@ -229,8 +229,8 @@ wave-cycle preset on the mutator "Configure"/admin Rules pages:
 
 * `PlayInfo.AddSetting(default.RespGroup, "ServerCycle", GetDisplayText(...),
   0, 1, "Select", default.CyclePresetText)` — the Extras string is
-  `"3.000000;Arena [3s];5.000000;Standard [5s];10.000000;Methodic [10s];
-  15.000000;Strategic [15s];30.000000;Tactical [30s]"` (value;Label pairs,
+  `"3.000000;Arena [3-6s];5.000000;Standard [5-10s];10.000000;Methodic [10-20s];
+  15.000000;Strategic [15-30s];30.000000;Tactical [30-60s]"` (value;Label pairs,
   exactly like the engine's own GameDifficulty dropdown). The labels come out
   of `RespawnDelay.int` (`RespGroup`, `CycleDisplayText`, `CycleDescText`,
   `CyclePresetText`).
@@ -288,7 +288,7 @@ wave-cycle preset on the mutator "Configure"/admin Rules pages:
    waits for `NumPlayers > 0`), so respawn flows need a live client to test.
 7. Mutator GUI: Instant Action or Lan game → Mutators → pick Respawn Delay →
    "Configure" → the "Respawn wave cycle" dropdown shows the five presets,
-   choosing one (e.g. Tactical [30s]) writes `ServerCycle=30.000000` into
+   choosing one (e.g. Tactical [30-60s]) writes `ServerCycle=30.000000` into
    `UT2004.ini` `[RespawnDelay.RespawnDelay]`, and the next team match runs
    30–60 s waits. Check the startup log line (`wave cycle=30.00`).
 8. **Network client** (dedicated server + a second machine/client, per

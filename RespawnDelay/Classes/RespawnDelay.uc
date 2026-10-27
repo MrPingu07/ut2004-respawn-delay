@@ -746,6 +746,6 @@ defaultproperties
 	AffectAssault=True
 	RespGroup="Respawn Delay"
 	CycleDisplayText="Respawn wave cycle"
-	CycleDescText="Server wave cycle for team games: everyone dying within a wave respawns together at the end of the next one, and waits always span one to two cycles. Arena 3s: continuous chaos, fast micro-batches (3-6s waits). Standard 5s: competitive balance (5-10s). Methodic 10s: methodical pushing waves (10-20s). Strategic 15s: large coordinated waves (15-30s). Tactical 30s: heavy combat simulation (30-60s). Solo games use the same length as a plain wait."
-	CyclePresetText="3.000000;Arena [3s];5.000000;Standard [5s];10.000000;Methodic [10s];15.000000;Strategic [15s];30.000000;Tactical [30s]"
+	CycleDescText="Server wave cycle for team games: everyone dying within a wave respawns together at the end of the next one, and waits always span one to two cycles. Arena [3-6s]: continuous chaos, fast micro-batches. Standard [5-10s]: competitive balance. Methodic [10-20s]: methodical pushing waves. Strategic [15-30s]: large coordinated waves. Tactical [30-60s]: heavy combat simulation. Solo games use the selected cycle length as a plain wait, so waits are exactly 3s, 5s, 10s, 15s or 30s."
+	CyclePresetText="3.000000;Arena [3-6s];5.000000;Standard [5-10s];10.000000;Methodic [10-20s];15.000000;Strategic [15-30s];30.000000;Tactical [30-60s]"
 }
