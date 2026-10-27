@@ -18,8 +18,9 @@
 //      nobody waits outside 5-10 seconds. The wait is locked at death until
 //      respawn.
 //
-//  * Non team modes (DM, LMS, ...): fixed BaseDelay (default 5 seconds).
-//      unchanged - no batching in solo modes.
+//  * Non team modes (DM, LMS, ...): plain ServerCycle wait (no batching),
+//      i.e. the same GUI-selectable wave-cycle value as team games (default
+//      5 seconds). BaseDelay is only a fallback for ServerCycle <= 0.
 //
 //  * Bots are delayed the same way (config AffectBots): a dying bot is parked
 //    in the passive controller state 'RoundEnded' (it just idles there, like
@@ -83,13 +84,14 @@ class RespawnDelay extends Mutator
 /** Master switch; can be toggled in UT2004.ini between matches. */
 var() config bool	Enabled;
 
-/** Respawn delay (seconds) in non team games. Team games use the batch cycle instead. */
+/** Fallback respawn delay (seconds) for non team games when ServerCycle <= 0. */
 var() config float	BaseDelay;
 
 /**
- * Team mode: length of the global reinforcement cycle (seconds); waves land on
- * its multiples. Configurable in the Mutator GUI as one of five presets
- * ("Arena", "Blitz", "Standard", "Strategic", "Tactical").
+ * Length of the global reinforcement cycle (seconds); team waves land on its
+ * multiples. In solo games the same value is used as the plain respawn wait.
+ * Configurable in the Mutator GUI as one of five presets ("Arena", "Blitz",
+ * "Standard", "Strategic", "Tactical").
  */
 var() config float	ServerCycle;
 
@@ -244,7 +246,9 @@ function float CycleRemaining()
  * Every respawn therefore lands exactly on a ServerCycle multiple of the
  * server clock (synchronized batches), and waits are always within
  * [ServerCycle, 2*ServerCycle] = 5-10 s with the default 5 s cycle.
- * Solo games (no batching): plain BaseDelay.
+ * Solo games (no batching): plain ServerCycle, i.e. the same GUI-selectable
+ * value the team wave cycle uses. BaseDelay is only a fallback for a
+ * misconfigured (<= 0) ServerCycle.
  */
 function float RespawnDelayFor(Controller C)
 {
@@ -261,6 +265,11 @@ function float RespawnDelayFor(Controller C)
 		// whole batch spawns in the same tick.
 		return Remain + ServerCycle;
 	}
+
+	// Solo games use the same wave-cycle length as the team preset instead of
+	// a hard-coded 5 s (BaseDelay only as a fallback for ServerCycle <= 0).
+	if ( ServerCycle > 0 )
+		return ServerCycle;
 
 	return BaseDelay;
 }
@@ -421,11 +430,24 @@ function Timer()
 				}
 			}
 		}
-		else if ( Level.TimeSeconds - Waiting[i].DiedAt >= FMax(DeathCamTime, SpectateDelay) )
+		else
 		{
-			// death camera (DeathCamTime) and the spectate hold-off
-			// (SpectateDelay) both over -> vanilla spectator mode
-			StartSpectating(PC);
+			// Still in the vanilla death camera ('Dead'), waiting out the
+			// spectate hold-off. The Dead state arms a 1 s timer in
+			// BeginState() that clears bFrozen; once unfrozen, FIRE calls
+			// ServerReStartPlayer() and would respawn instantly, bypassing
+			// our locked RespawnAt. Re-arm both the freeze and its timer every
+			// tick: with bFrozen and 0 < TimerRate <= 1, Dead.Fire() returns
+			// without unfreezing or respawning, and the timer never fires.
+			PC.bFrozen = true;
+			PC.SetTimer(1.0, false);
+
+			if ( Level.TimeSeconds - Waiting[i].DiedAt >= FMax(DeathCamTime, SpectateDelay) )
+			{
+				// death camera (DeathCamTime) and the spectate hold-off
+				// (SpectateDelay) both over -> vanilla spectator mode
+				StartSpectating(PC);
+			}
 		}
 	}
 
@@ -623,6 +645,6 @@ defaultproperties
 	AffectAssault=True
 	RespGroup="Respawn Delay"
 	CycleDisplayText="Respawn wave cycle"
-	CycleDescText="Server wave cycle for team games: everyone dying within a wave respawns together at the end of the next one, and waits always span one to two cycles. Arena 2s: continuous chaos (2-4s waits). Blitz 3s: frenetic micro-batches (3-6s). Standard 5s: competitive balance (5-10s). Strategic 10s: large pushing waves (10-20s). Tactical 15s: heavy combat simulation (15-30s)."
+	CycleDescText="Server wave cycle for team games: everyone dying within a wave respawns together at the end of the next one, and waits always span one to two cycles. Arena 2s: continuous chaos (2-4s waits). Blitz 3s: frenetic micro-batches (3-6s). Standard 5s: competitive balance (5-10s). Strategic 10s: large pushing waves (10-20s). Tactical 15s: heavy combat simulation (15-30s). Solo games use the same length as a plain wait."
 	CyclePresetText="2.000000;Arena [2s];3.000000;Blitz [3s];5.000000;Standard [5s];10.000000;Strategic [10s];15.000000;Tactical [15s]"
 }

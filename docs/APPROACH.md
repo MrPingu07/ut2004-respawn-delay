@@ -5,7 +5,7 @@
 | situation | behaviour |
 |---|---|
 | team game (TDM, CTF, BR, DOM, ONS, AS, ...) | **global wave cycle**: global 5 s server cycle; die right at a cycle start → 5 s wait (imminent wave); die later → wait = time remaining + 5 s, spawning in a synchronized batch at the end of the next cycle. Locked at death *until respawn*; waits always 5–10 s |
-| solo game (DM, LMS, ...) | always 5 s (no batching) |
+| solo game (DM, LMS, ...) | the same selectable cycle length as a plain wait (default 5 s, no batching) |
 | bots | same rules; a dying bot waits its delay instead of respawning ~instantly (`AffectBots=True`) — in team games bots join the same waves |
 | while waiting | spectator mode: switch between team-mates, or between all players when solo |
 
@@ -46,7 +46,8 @@ The mutator (`RespawnDelay.RespawnDelay`) runs a **supervisor** on its own
    `GameInfo.RestartPlayer`, so it filters out that match-start case).
 2. **Delay computation (set in stone)** — at registration,
    `RespawnDelayFor(C)` is evaluated once:
-   * solo games → `BaseDelay` (5 s)
+   * solo games → `ServerCycle` (the same GUI-selectable value as the team
+     wave cycle; default 5 s, `BaseDelay` only as a fallback if `<= 0`)
    * team games → the global wave cycle (perfect synchronization):
 
      waves land on every `Level.TimeSeconds` multiple of `ServerCycle`
@@ -71,6 +72,11 @@ The mutator (`RespawnDelay.RespawnDelay`) runs a **supervisor** on its own
    `GotoState('Spectating')`, `bBehindView = true`,
    `ServerViewNextPlayer()`. Remaining frozen/jump flags from the death camera
    are cleared, the controller's pending Timer cancelled.
+   * Until then the player stays in `state Dead` with `bFrozen` (and the
+     Dead state's 1 s unfreeze timer) re-armed every supervisor tick. Vanilla
+     `Dead.Fire()` only respawns when `bFrozen == false`, so this stops FIRE
+     from bypassing the locked `RespawnAt` during the hold-off. FIRE starts
+     cycling views only once Spectating begins.
    * FIRE cycles player views; `TeamGame.CanSpectate` limits players to their
      own team, DM allows everybody — no additional code needed.
    * ALT-FIRE returns to the own (flying) camera.
@@ -194,8 +200,8 @@ docs/APPROACH.md                       this document
 | var | default | meaning |
 |---|---|---|
 | `Enabled` | True | master switch (applied between matches) |
-| `BaseDelay` | 5.0 | seconds in solo (non-team) games |
-| `ServerCycle` | 5.0 | team games only: global wave cycle length; waits span one to two cycles. Exposed in the **Mutator GUI** as a 5-preset dropdown ("Arena [2s]", "Blitz [3s]", "Standard [5s]", "Strategic [10s]", "Tactical [15s]") |
+| `BaseDelay` | 5.0 | fallback respawn delay for solo (non-team) games when `ServerCycle <= 0` |
+| `ServerCycle` | 5.0 | global wave cycle length (team games) and plain respawn wait (solo games); waits span one to two cycles in team games. Exposed in the **Mutator GUI** as a 5-preset dropdown ("Arena [2s]", "Blitz [3s]", "Standard [5s]", "Strategic [10s]", "Tactical [15s]") |
 | `DeathCamTime` | 1.0 | vanilla death camera seconds before spectator mode |
 | `SpectateDelay` | 3.0 | seconds after death before spectator mode starts; spectating begins at `max(DeathCamTime, SpectateDelay)` so players stay in the death camera longer |
 | `Countdown` | True | per-second HUD countdown while waiting |
@@ -243,7 +249,8 @@ wave-cycle preset on the mutator "Configure"/admin Rules pages:
 1. DM/TDM with a few bots:
    - die → death camera ≈ 1 s → spectator fly view on a player only after the
      `SpectateDelay` (3 s default) has elapsed
-   - `_ "FIRE"` cycles, AltFire returns to own camera
+   - press FIRE during that hold-off → nothing happens (no early respawn)
+   - `_ "FIRE"` cycles, AltFire returns to own camera (once spectating)
    - console message shows the locked delay; respawn happens only after it
    - `mutate respawnstatus` while waiting prints the remaining time
 2. Team games: everyone dying within the same cycle shows counts that all
@@ -251,7 +258,8 @@ wave-cycle preset on the mutator "Configure"/admin Rules pages:
    boundary; waits never fall outside one to two cycles (5–10 s by default).
    Watch a full wave: several players/bots popping at (almost) the same
    instant, then silence.
-3. Solo DM: every death waits the full 5 s regardless of timing.
+3. Solo DM: every death waits the selected cycle length (default 5 s) regardless
+   of timing; picking a different preset in the Mutator GUI changes it too.
 4. Bots: kill a bot → it should not reappear before its delay; simplest check
    is relative respawn timing (yours vs. the bots'), and bots fighting again
    after the wait rather than standing idle (idle → a safety valve fired —

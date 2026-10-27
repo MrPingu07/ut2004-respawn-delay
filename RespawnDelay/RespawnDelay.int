@@ -1,10 +1,10 @@
 [Public]
-Object=(Name=RespawnDelay.RespawnDelay,Class=Class,MetaClass=Engine.Mutator,Description="Respawn Delay,Players must wait before respawning. Team games: global configurable wave cycle (Standard 5s: waits 5-10s, presets from 2s to 15s in the Mutator GUI). Solo games: fixed 5 seconds. While waiting you spectate (FIRE cycles views).")
-Mutator=(ClassName=RespawnDelay.RespawnDelay,IconMaterialName=MutatorArt.nosym,FriendlyName=RespawnDelay.RespawnDelay.FriendlyName,Description=RespawnDelay.RespawnDelay.Description,FallbackName="Respawn Delay",FallbackDesc="Forces players to wait before respawning. Team games respawn together in waves on a global 5s cycle (waits always 5-10s); solo games use a fixed 5s. While waiting you are a spectator (FIRE to cycle views).")
+Object=(Name=RespawnDelay.RespawnDelay,Class=Class,MetaClass=Engine.Mutator,Description="Respawn Delay,Players must wait before respawning. Team games: global configurable wave cycle (Standard 5s: waits 5-10s, presets from 2s to 15s in the Mutator GUI). Solo games: the same selectable cycle length as a plain wait. While waiting you spectate (FIRE cycles views).")
+Mutator=(ClassName=RespawnDelay.RespawnDelay,IconMaterialName=MutatorArt.nosym,FriendlyName=RespawnDelay.RespawnDelay.FriendlyName,Description=RespawnDelay.RespawnDelay.Description,FallbackName="Respawn Delay",FallbackDesc="Forces players to wait before respawning. Team games respawn together in waves on a global 5s cycle (waits always 5-10s); solo games use the same selectable cycle length. While waiting you are a spectator (FIRE to cycle views).")
 
 [RespawnDelay.RespawnDelay]
 FriendlyName="Respawn Delay"
-Description="Forces players to wait before respawning. Team games respawn together in waves on a global configurable cycle: waits always span one to two cycles (Standard 5s: 5-10s; presets 2s-10s selectable in the Mutator GUI). Solo games use a fixed 5s. While waiting you are a spectator (FIRE to cycle views)."
+Description="Forces players to wait before respawning. Team games respawn together in waves on a global configurable cycle: waits always span one to two cycles (Standard 5s: 5-10s; presets 2s-15s selectable in the Mutator GUI). Solo games use the same selectable cycle length as a plain wait. While waiting you are a spectator (FIRE to cycle views)."
 
 ; -- localized strings used by the mutator (via ClientMessage) --
 MsgRespawnTeam="Spawn with the next reinforcement wave in %1 seconds"
@@ -16,7 +16,7 @@ MsgStatusIdle="RespawnDelay: not waiting to respawn."
 ; -- mutator GUI (PlayInfo / "Configure" pages) --
 RespGroup="Respawn Delay"
 CycleDisplayText="Respawn wave cycle"
-CycleDescText="Arena [2s]: continuous chaos, near-instant respawns (2-4s wait), batches occur mostly by accident from simultaneous explosions, best for Team Deathmatch. | Blitz [3s]: frenetic attack, fast-paced with micro-batches (3-6s wait), perfect for small maps and Capture the Flag. | Standard [5s]: competitive balance, the perfect equilibrium (5-10s wait), tailored for tactical flow and squad spawning in Onslaught and Assault. | Strategic [10s]: semi-tactical pacing, moderate punishment for dying (10-20s wait), forces defenders to group into large waves before pushing. | Tactical [15s]: heavy combat simulation, every death is critical (15-30s wait), teams respawn in full battalions for macro maps with heavy vehicles."
+CycleDescText="Arena [2s]: continuous chaos, near-instant respawns (2-4s wait), batches occur mostly by accident from simultaneous explosions, best for Team Deathmatch. | Blitz [3s]: frenetic attack, fast-paced with micro-batches (3-6s wait), perfect for small maps and Capture the Flag. | Standard [5s]: competitive balance, the perfect equilibrium (5-10s wait), tailored for tactical flow and squad spawning in Onslaught and Assault. | Strategic [10s]: semi-tactical pacing, moderate punishment for dying (10-20s wait), forces defenders to group into large waves before pushing. | Tactical [15s]: heavy combat simulation, every death is critical (15-30s wait), teams respawn in full battalions for macro maps with heavy vehicles. | Solo games use the same length as a plain wait."
 CyclePresetText="2.000000;Arena [2s];3.000000;Blitz [3s];5.000000;Standard [5s];10.000000;Strategic [10s];15.000000;Tactical [15s]"
 
 [RespawnDelay.RespawnDelayCountdown]
