@@ -30,7 +30,7 @@ The mutator (`RespawnDelay.RespawnDelay`) runs a **supervisor** on its own
 `Timer` at 20 Hz and manages each dead player personally:
 
 ```
-[alive] --death--> [state Dead: vanilla death camera, DeathCamTime]
+[alive] --death--> [Dead + PRI.bOutOfLives lock: death camera, RestartPlayer refused]
         --max(DeathCamTime, SpectateDelay)--> [state Spectating: free cam + FIRE cycles views]
         --locked time reached--> [GameInfo.RestartPlayer(PC) -> state PlayerWalking]
 ```
@@ -72,11 +72,24 @@ The mutator (`RespawnDelay.RespawnDelay`) runs a **supervisor** on its own
    `GotoState('Spectating')`, `bBehindView = true`,
    `ServerViewNextPlayer()`. Remaining frozen/jump flags from the death camera
    are cleared, the controller's pending Timer cancelled.
-   * Until then the player stays in `state Dead` with `bFrozen` (and the
-     Dead state's 1 s unfreeze timer) re-armed every supervisor tick. Vanilla
-     `Dead.Fire()` only respawns when `bFrozen == false`, so this stops FIRE
-     from bypassing the locked `RespawnAt` during the hold-off. FIRE starts
-     cycling views only once Spectating begins.
+   * **The hold-off locks respawns with `PRI.bOutOfLives`.** In `state Dead`,
+     `ServerReStartPlayer()` honours any respawn request
+     (`PlayerCanRestart()` → `RestartPlayer()`), so pressing FIRE once the 1 s
+     vanilla freeze expired — or, more importantly, clicking Onslaught's
+     death-map **"Spawn Here"** button, which calls the same RPC — respawned
+     the player instantly and bypassed the locked `RespawnAt`.
+     `DeathMatch.RestartPlayer()` refuses to spawn a PRI flagged
+     `bOutOfLives`, so the supervisor raises that flag for the hold-off and
+     clears it right before spectator mode / the scheduled spawn. The death
+     camera, controller state and client-side behaviour stay vanilla; the
+     player is just temporarily "out of lives" server-side. In standalone /
+     listen play the Dead state's `bFrozen` gate is re-armed every tick, so
+     FIRE keeps doing nothing until `SpectateDelay`; on network clients FIRE
+     may start spectator view early but cannot respawn before `RespawnAt`.
+     `MaxLives` games and overtime are excluded from the lock: `CheckMaxLives()`
+     / `CheckEndGame()` read `bOutOfLives` to decide the match is over, so a
+     temporary lock could look like a full wipe. The chosen power node is kept
+     by Onslaught for the scheduled spawn.
    * FIRE cycles player views; `TeamGame.CanSpectate` limits players to their
      own team, DM allows everybody — no additional code needed.
    * ALT-FIRE returns to the own (flying) camera.

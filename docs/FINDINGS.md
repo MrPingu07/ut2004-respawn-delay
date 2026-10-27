@@ -228,7 +228,46 @@ only after the *viewed* pawn died, missing viewmodels in first person):
   engine-sanctioned, and ClientRestart recomputes the real start state
   (water -> 'PlayerSwimming') for the spawned pawn afterwards.
 
-## 9. Environment of this install
+## 9. Onslaught death map bypasses `state Dead` respawn gates
+
+`ONSPlayerReplicationInfo.OwnerDied()` → `ClientShowMap()` (Onslaught/
+ONSPlayerReplicationInfo.uc:121-130) pops the mid-game map after death, and its
+"Spawn Here" button (GUI2K4/UT2K4Tab_OnslaughtMap.uc:345-388) calls
+`PC.ServerRestartPlayer()`. In UnrealScript identifiers are case-insensitive,
+so that is the same function as `Controller.ServerReStartPlayer()`; the
+`state Dead` override (Engine/PlayerController.uc:6339) runs
+`Level.Game.PlayerCanRestart()` + `GameInfo.RestartPlayer()` immediately. That
+path does **not** look at `bFrozen`, so the 1 s freeze only blocks `Fire()` and
+clicking a power node respawns the player instantly, bypassing a scheduled
+delay. `GameInfo.PlayerCanRestart()` is not a GameRules hook and ONS does not
+override it.
+
+Controller states with a no-op `ServerReStartPlayer()`:
+
+| state | `ServerReStartPlayer` | usable for a human hold-off? |
+|---|---|---|
+| `Dead` | `PlayerCanRestart` + `RestartPlayer` (respawn!) | — |
+| `RoundEnded` (Controller) | empty | bots only; the PlayerController version of the state loops over **all** pawns and calls `TurnOff()` |
+| `GameEnded` (Controller) | empty | same all-pawns shutdown, match over only |
+
+The safe per-player lever is `PlayerReplicationInfo.bOutOfLives`:
+`DeathMatch.RestartPlayer()` (UnrealGame/DeathMatch.uc:652) returns **before**
+spawning when `aPlayer.PlayerReplicationInfo.bOutOfLives` is set, and it is a
+per-player flag that does not affect the controller state or camera. The
+mutator sets it for the death-camera hold-off and clears it before the
+scheduled respawn, which turns every early request (map button, FIRE,
+`bForceRespawn` loop) into a no-op. ONS keeps the selected node in
+`ONSPlayerReplicationInfo.TemporaryStartCore` for the later `RestartPlayer()`.
+
+Caveat: `MaxLives` games and overtime cannot borrow the flag, because
+`CheckMaxLives()` (UnrealGame/TeamGame.uc:417, UnrealGame/DeathMatch.uc:1367)
+and the overtime `bLastMan` scan in `DeathMatch.CheckEndGame()` treat
+`bOutOfLives` as "this player is gone for good" and may end the match when
+everybody is temporarily flagged. The mutator therefore applies the lock only
+when `Level.Game.MaxLives <= 0 && !Level.Game.bOverTime` and falls back to the
+`bFrozen` FIRE gate there.
+
+## 10. Environment of this install
 
 * Windows build running through wine 11.20-staging; `wine UCC.exe make` works
   (cwd = game `System/`).

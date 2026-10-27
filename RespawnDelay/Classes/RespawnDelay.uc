@@ -52,9 +52,15 @@
 //    1. A fresh death is detected when a PlayerController enters "state Dead"
 //       with no pawn and is not flagged as unable to respawn (bOnlySpectator,
 //       bOutOfLives).
-//    2. After the vanilla death camera window (DeathCamTime) the controller is
-//       moved to the vanilla 'Spectating' state (same thing UT2004 itself does
-//       for Last Man Standing, via UnrealPlayer.ServerSpectate).
+//    2. During the death-camera / spectate hold-off the waiting player's
+//       PRI.bOutOfLives is set: DeathMatch.RestartPlayer() returns before
+//       spawning anyone flagged "out of lives", so every early respawn request
+//       (Onslaught's death-map "Spawn Here" button, FIRE, bForceRespawn, ...)
+//       is refused instead of bypassing the locked RespawnAt. The flag is
+//       cleared before spectator mode / the scheduled respawn. After the
+//       hold-off the controller is moved to the vanilla 'Spectating' state
+//       (same thing UT2004 itself does for Last Man Standing, via
+//       UnrealPlayer.ServerSpectate).
 //    3. When the locked respawn time is reached, the supervisor calls
 //       GameInfo.PlayerCanRestart() and GameInfo.RestartPlayer(), i.e. the
 //       exact vanilla respawn routine (bots get RestartPlayer() directly,
@@ -168,6 +174,7 @@ struct TWaitingPlayer
 	var float				LastAttempt;// last RestartPlayer attempt (rate limiter)
 	var int					Tries;		// failed RestartPlayer attempts
 	var int					LastCountdown;	// whole seconds already displayed (-1 = none yet, -2 = cleared)
+	var bool				bRespawnLocked;	// we set PRI.bOutOfLives during the death-camera hold-off
 };
 
 var array<TWaitingPlayer>	Waiting;
@@ -290,7 +297,10 @@ function Timer()
 
 	if ( Level.Game == None || Level.Game.bGameEnded )
 	{
-		// the game takes over from here; drop everything
+		// the game takes over from here; drop everything (and never leave our
+		// temporary out-of-lives lock behind)
+		for ( i = 0; i < Waiting.Length; i++ )
+			ClearRespawnLock(i);
 		Waiting.Remove(0, Waiting.Length);
 		return;
 	}
@@ -307,13 +317,17 @@ function Timer()
 			continue;
 		}
 
-		// respawned or taken over by the game (round end, MaxLives, invasion wave ...)
-		if ( C.Pawn != None || C.PlayerReplicationInfo == None || C.PlayerReplicationInfo.bOutOfLives )
+		// respawned or taken over by the game (round end, MaxLives, invasion wave ...).
+		// bOutOfLives is also our own early-respawn lock during the hold-off,
+		// so ignore it while we own it.
+		if ( C.Pawn != None || C.PlayerReplicationInfo == None
+			|| (C.PlayerReplicationInfo.bOutOfLives && !Waiting[i].bRespawnLocked) )
 		{
 			// a bot parked by us must go back to the vanilla machine
 			B = Bot(C);
 			if ( B != None && C.Pawn == None )
 				B.GotoState('Dead');
+			ClearRespawnLock(i);
 			ClearCountdown(i);
 			Waiting.Remove(i, 1);
 			continue;
@@ -367,6 +381,18 @@ function Timer()
 		PC = PlayerController(C);
 		if ( PC == None )
 		{
+			ClearRespawnLock(i);
+			Waiting.Remove(i, 1);
+			continue;
+		}
+
+		// Assault round transition: the game moves every controller to
+		// 'RoundEnded' and resets/spawns them at round start. Hand this human
+		// back so the round machinery owns it.
+		if ( bIsAssault && ASGameInfo(Level.Game).ResetCountDown != 0 )
+		{
+			ClearRespawnLock(i);
+			ClearCountdown(i);
 			Waiting.Remove(i, 1);
 			continue;
 		}
@@ -374,9 +400,42 @@ function Timer()
 		// match/round machinery moved the controller (state 'RoundEnded', ...)
 		if ( !PC.IsInState('Dead') && !PC.IsInState('Spectating') )
 		{
+			ClearRespawnLock(i);
 			ClearCountdown(i);
 			Waiting.Remove(i, 1);
 			continue;
+		}
+
+		// Early-respawn lock: 'state Dead' lets ServerReStartPlayer() through
+		// (PlayerCanRestart() -> RestartPlayer()), and Onslaught's death map
+		// ("Choose Your Spawn Point" / "Spawn Here") calls exactly that RPC.
+		// Clicking a power node during the hold-off therefore respawned the
+		// player instantly, bypassing the locked RespawnAt (the 1 s bFrozen
+		// window only guarded FIRE, not the map button). DeathMatch's
+		// RestartPlayer() refuses to spawn a PRI with bOutOfLives, so flagging
+		// the player for the hold-off turns every early request into a no-op
+		// without touching the death camera or the client state.
+		//
+		// Only players who died without being out of lives reach this point
+		// (the scan skips bOutOfLives), and a dead player cannot lose another
+		// MaxLives life, so the flag cannot mask a legitimate "out of lives".
+		// ClearRespawnLock() drops it as soon as Spectating is reached (or the
+		// game takes the player over), before the scheduled respawn.
+		//
+		// MaxLives games and overtime are excluded from the lock
+		// (CheckMaxLives() / CheckEndGame() read the flag to decide the match
+		// is over); their early-respawn hole via the bForceRespawn loop / ONS
+		// map cannot be closed without a safe flag.
+		if ( Waiting[i].bRespawnLocked
+			&& (Level.Game.MaxLives > 0 || Level.Game.bOverTime) )
+		{
+			ClearRespawnLock(i);		// overtime just started: drop the lock
+		}
+		else if ( PC.IsInState('Dead') && !Waiting[i].bRespawnLocked
+			&& Level.Game.MaxLives <= 0 && !Level.Game.bOverTime )
+		{
+			PC.PlayerReplicationInfo.bOutOfLives = true;
+			Waiting[i].bRespawnLocked = true;
 		}
 
 		// per-second HUD countdown, one pulse per whole second left
@@ -392,6 +451,11 @@ function Timer()
 
 		if ( PC.IsInState('Spectating') )
 		{
+			// Spectating means the death-camera hold-off is over (either we
+			// moved the player there or FIRE -> ServerSpectate() did): the
+			// temporary out-of-lives lock must not block the scheduled spawn.
+			ClearRespawnLock(i);
+
 			// time up -> vanilla respawn routine
 			if ( Level.TimeSeconds >= Waiting[i].RespawnAt
 				&& !Level.Game.bWaitingToStartMatch
@@ -420,6 +484,7 @@ function Timer()
 				// hand back to the vanilla dead state
 				if ( Waiting[i].Tries > 30 )
 				{
+					ClearRespawnLock(i);
 					ClearCountdown(i);
 					PC.GotoState('Dead');
 					// keep the client in step (ClientGotoState pairing, see the
@@ -432,20 +497,21 @@ function Timer()
 		}
 		else
 		{
-			// Still in the vanilla death camera ('Dead'), waiting out the
-			// spectate hold-off. The Dead state arms a 1 s timer in
-			// BeginState() that clears bFrozen; once unfrozen, FIRE calls
-			// ServerReStartPlayer() and would respawn instantly, bypassing
-			// our locked RespawnAt. Re-arm both the freeze and its timer every
-			// tick: with bFrozen and 0 < TimerRate <= 1, Dead.Fire() returns
-			// without unfreezing or respawning, and the timer never fires.
+			// Still in the death-camera hold-off. Keep the vanilla FIRE gate
+			// armed as well: in standalone / listen play this is the same
+			// object the client fires through, so FIRE keeps doing nothing
+			// until SpectateDelay instead of jumping to the spectator view
+			// early. (Network clients have their own bFrozen and may start
+			// spectating early with FIRE, but can never respawn early: the
+			// bOutOfLives lock above refuses RestartPlayer.)
 			PC.bFrozen = true;
 			PC.SetTimer(1.0, false);
 
 			if ( Level.TimeSeconds - Waiting[i].DiedAt >= FMax(DeathCamTime, SpectateDelay) )
 			{
 				// death camera (DeathCamTime) and the spectate hold-off
-				// (SpectateDelay) both over -> vanilla spectator mode
+				// (SpectateDelay) both over -> drop the lock, vanilla spectating
+				ClearRespawnLock(i);
 				StartSpectating(PC);
 			}
 		}
@@ -508,6 +574,7 @@ function RegisterDeath(Controller C)
 	W.LastAttempt	= 0.0;
 	W.Tries			= 0;
 	W.LastCountdown	= -1;		// forces the first countdown pulse immediately
+	W.bRespawnLocked	= false;
 	W.RespawnAt		= Level.TimeSeconds + RespawnDelayFor(C);
 
 	Waiting[Waiting.Length] = W;
@@ -518,8 +585,23 @@ function RegisterDeath(Controller C)
 	if ( W.bBot )
 		Bot(C).GotoState('RoundEnded');
 
-	// announce the locked delay
 	PC = PlayerController(C);
+
+	// Humans: lock respawns right away (see the Timer hold-off comment):
+	// DeathMatch.RestartPlayer() refuses to spawn a PRI flagged bOutOfLives,
+	// so even an immediate Onslaught map click / bForceRespawn tick cannot
+	// bypass RespawnAt. Cleared in ClearRespawnLock(). MaxLives games and
+	// overtime are excluded: CheckMaxLives() / CheckEndGame() read bOutOfLives
+	// to decide the match is over, and a temporary lock could look like a full
+	// wipe whenever every player happens to be dead at the same time.
+	if ( PC != None && PC.PlayerReplicationInfo != None
+		&& Level.Game.MaxLives <= 0 && !Level.Game.bOverTime )
+	{
+		PC.PlayerReplicationInfo.bOutOfLives = true;
+		Waiting[Waiting.Length-1].bRespawnLocked = true;
+	}
+
+	// announce the locked delay
 	if ( PC != None )
 	{
 		if ( Level.Game.bTeamGame )
@@ -545,6 +627,25 @@ function ClearCountdown(int i)
 	PC = PlayerController(Waiting[i].C);
 	if ( PC != None && !PC.bDeleteMe )
 		PC.ReceiveLocalizedMessage(class'RespawnDelayCountdown', -1);
+}
+
+/**
+ * Remove our temporary bOutOfLives early-respawn lock and give the PRI back
+ * its real value (false: only players who were not out of lives are managed).
+ * Must run before spectator mode / the scheduled respawn so the vanilla
+ * RestartPlayer() is not refused again.
+ */
+function ClearRespawnLock(int i)
+{
+	local PlayerController PC;
+
+	if ( !Waiting[i].bRespawnLocked )
+		return;
+
+	Waiting[i].bRespawnLocked = false;
+	PC = PlayerController(Waiting[i].C);
+	if ( PC != None && !PC.bDeleteMe && PC.PlayerReplicationInfo != None )
+		PC.PlayerReplicationInfo.bOutOfLives = false;
 }
 
 /**

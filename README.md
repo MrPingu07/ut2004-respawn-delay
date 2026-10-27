@@ -26,6 +26,14 @@ from the screen the moment you respawn, so no stale counter ever survives.
 match start, so the same delay rules apply there (`AffectAssault=True`; set
 it false to keep vanilla waves and have the mutator stay off in Assault).
 
+**Onslaught spawn map**: the "Choose Your Spawn Point" map that pops up after
+death may still be used to pick a power node during the wait — the choice is
+remembered and used when the wave spawns you — but its "Spawn Here" button can
+no longer respawn you early and skip the remaining delay. (Games with
+`MaxLives` set, or matches in overtime, cannot use this per-player lock
+safely, because the game reads the same flag to detect a match wipe; there the
+spawn map keeps its vanilla instant-respawn behaviour.)
+
 ## Build
 
 ```bash
