@@ -5,24 +5,29 @@ on:
     tags:
       - 'v*'
 
+permissions:
+  contents: write
+
 jobs:
   release:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Zip source tree
+      - name: Build .zip from the tag
         run: |
-          version="${GITHUB_REF_NAME#v}"
-          zip -r "RespawnDelay-${version}.zip" . \
-            -x '.git/*' '.github/*' '*.git*'
+          git archive --format=zip \
+            --output="ut2004-respawn-delay_${GITHUB_REF_NAME}.zip" \
+            "${GITHUB_REF_NAME}"
 
-      - name: Create GitHub release and upload .zip asset
+      - name: Create GitHub release with .zip asset
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release create "${GITHUB_REF_NAME}" \
-            "RespawnDelay-${version}.zip" \
-            --title "RespawnDelay ${version}" \
+            "ut2004-respawn-delay_${GITHUB_REF_NAME}.zip" \
+            --title "Respawn Delay ${GITHUB_REF_NAME}" \
             --generate-notes
