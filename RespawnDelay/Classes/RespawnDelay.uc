@@ -96,8 +96,8 @@ var() config float	BaseDelay;
 /**
  * Length of the global reinforcement cycle (seconds); team waves land on its
  * multiples. In solo games the same value is used as the plain respawn wait.
- * Configurable in the Mutator GUI as one of five presets ("Arena", "Blitz",
- * "Standard", "Strategic", "Tactical").
+ * Configurable in the Mutator GUI as one of five presets ("Arena", "Standard",
+ * "Methodic", "Strategic", "Tactical").
  */
 var() config float	ServerCycle;
 
@@ -746,6 +746,6 @@ defaultproperties
 	AffectAssault=True
 	RespGroup="Respawn Delay"
 	CycleDisplayText="Respawn wave cycle"
-	CycleDescText="Server wave cycle for team games: everyone dying within a wave respawns together at the end of the next one, and waits always span one to two cycles. Arena 2s: continuous chaos (2-4s waits). Blitz 3s: frenetic micro-batches (3-6s). Standard 5s: competitive balance (5-10s). Strategic 10s: large pushing waves (10-20s). Tactical 15s: heavy combat simulation (15-30s). Solo games use the same length as a plain wait."
-	CyclePresetText="2.000000;Arena [2s];3.000000;Blitz [3s];5.000000;Standard [5s];10.000000;Strategic [10s];15.000000;Tactical [15s]"
+	CycleDescText="Server wave cycle for team games: everyone dying within a wave respawns together at the end of the next one, and waits always span one to two cycles. Arena 3s: continuous chaos, fast micro-batches (3-6s waits). Standard 5s: competitive balance (5-10s). Methodic 10s: methodical pushing waves (10-20s). Strategic 15s: large coordinated waves (15-30s). Tactical 30s: heavy combat simulation (30-60s). Solo games use the same length as a plain wait."
+	CyclePresetText="3.000000;Arena [3s];5.000000;Standard [5s];10.000000;Methodic [10s];15.000000;Strategic [15s];30.000000;Tactical [30s]"
 }

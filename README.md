@@ -78,11 +78,11 @@ AffectAssault=True
 
   | preset | cycle | waits | intended for |
   |---|---|---|---|
-  | Arena [2s] | 2 s | 2–4 s | continuous chaos; near-instant respawns, batches happen mostly by accident from simultaneous explosions; Team Deathmatch |
-  | Blitz [3s] | 3 s | 3–6 s | frenetic attack; fast-paced micro-batches; small maps and Capture the Flag |
+  | Arena [3s] | 3 s | 3–6 s | continuous chaos; near-instant respawns and fast micro-batches; Team Deathmatch and small maps |
   | Standard [5s] (default) | 5 s | 5–10 s | competitive balance; tactical flow and squad spawning in Onslaught and Assault |
-  | Strategic [10s] | 10 s | 10–20 s | semi-tactical pacing; forces defenders to group into large waves before pushing |
-  | Tactical [15s] | 15 s | 15–30 s | heavy combat simulation; teams respawn in full battalions for macro maps with heavy vehicles |
+  | Methodic [10s] | 10 s | 10–20 s | methodical pacing; moderate punishment for dying, teams regroup into waves before pushing |
+  | Strategic [15s] | 15 s | 15–30 s | strategic pacing; every death matters, defenders mass into large waves before committing |
+  | Tactical [30s] | 30 s | 30–60 s | heavy combat simulation; every death is critical, full battalions for macro maps with heavy vehicles |
 * `Countdown=False` hides the per-second HUD counter.
 * `SpectateDelay=3.0` keeps dead players out of spectator mode (and in the
   death camera) for 3 seconds after dying, so spectating doesn't start too
