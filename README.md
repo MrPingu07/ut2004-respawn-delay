@@ -7,9 +7,12 @@ every spawn lands exactly on a cycle boundary and no wait ever falls outside
 one to two cycles (**5–10 seconds** with the default). Solo games use the same
 selectable cycle length as a plain wait (default 5 seconds).
 Bots follow the same rules (in team games they join the same waves). While
-waiting you are a spectator: `FIRE` cycles player views (own team in team
-games, everybody in solo games), `ALT-FIRE` returns to your own free camera.
-The wait is computed once when you die and stays locked until you respawn.
+waiting you are a spectator: `FIRE` cycles living player views (own team in
+team games, everybody in solo games), `ALT-FIRE` returns to your own free
+camera. Dead players are skipped; if the player you are watching dies, the
+camera stays at that death spot in free camera, and when nobody is alive you
+get free camera automatically. The wait is computed once when you die and
+stays locked until you respawn.
 
 | mode | delay rule |
 |---|---|

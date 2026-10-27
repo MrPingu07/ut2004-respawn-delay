@@ -9,7 +9,7 @@ Description="Forces players to wait before respawning. Team games respawn togeth
 ; -- localized strings used by the mutator (via ClientMessage) --
 MsgRespawnTeam="Spawn with the next reinforcement wave in %1 seconds"
 MsgRespawnSolo="Respawn delay locked at %1 seconds"
-MsgSpectateHint="Waiting to respawn - FIRE: next player view, ALT-FIRE: own camera"
+MsgSpectateHint="Waiting to respawn - FIRE: next living player, ALT-FIRE: free camera"
 MsgStatusWaiting="RespawnDelay: you respawn in %1 seconds"
 MsgStatusIdle="RespawnDelay: not waiting to respawn."
 

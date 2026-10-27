@@ -35,9 +35,14 @@
 //    so this mutator fully governs Assault respawns instead.
 //
 //  * While waiting, players are put in the vanilla 'Spectating' state:
-//      FIRE            cycles the camera through the players allowed by the
-//                      game type (own team members in team games, every
-//                      player in solo games, as enforced by GameInfo.CanSpectate)
+//      FIRE            cycles the camera through the living players allowed by
+//                      the game type (own team members in team games, every
+//                      player in solo games, as enforced by GameInfo.CanSpectate).
+//                      Dead players are skipped; if the player currently being
+//                      watched dies, the camera stays at that death spot in
+//                      free camera (orbit/fly around it) instead of following
+//                      the corpse. With no living player left, free camera is
+//                      forced immediately.
 //      ALT-FIRE        returns to the own (free) camera
 //      Aggression AE   spectator free camera (fly around the map)
 //
@@ -175,6 +180,11 @@ struct TWaitingPlayer
 	var int					Tries;		// failed RestartPlayer attempts
 	var int					LastCountdown;	// whole seconds already displayed (-1 = none yet, -2 = cleared)
 	var bool				bRespawnLocked;	// we set PRI.bOutOfLives during the death-camera hold-off
+	// spectator camera bookkeeping (human only)
+	var Actor				LastViewTarget;	// last PC.ViewTarget handled
+	var vector				LastViewLocation;	// last alive seen / free-camera anchor
+	var bool				bHasViewLocation;
+	var bool				bFreeCam;		// currently viewing from own camera
 };
 
 var array<TWaitingPlayer>	Waiting;
@@ -189,7 +199,16 @@ var bool					bGameExcluded;	// the game manages respawns itself (Invasion, or As
 
 function PostBeginPlay()
 {
+	local Controller C;
+
 	Super.PostBeginPlay();
+
+	// The vanilla ServerViewSelf()/ViewSelf() chat message is noise here.
+	// An empty OwnCamera makes those ClientMessage() calls render nothing;
+	// new players get the same treatment in ModifyPlayer().
+	for ( C = Level.ControllerList; C != None; C = C.NextController )
+		if ( PlayerController(C) != None )
+			PlayerController(C).OwnCamera = "";
 
 	// Assault: the game runs its own reinforcement waves that would co-govern
 	// respawns. With AffectAssault enabled, shut them off so this mutator's
@@ -217,6 +236,18 @@ function PostBeginPlay()
 
 	log("RespawnDelay enabled ("$Level.Game$" team="$Level.Game.bTeamGame$")"
 		@"solo delay="$BaseDelay@"wave cycle="$ServerCycle, 'RespawnDelay');
+}
+
+/** Every player (not only the waiting ones) gets the quiet free-camera switch. */
+function ModifyPlayer(Pawn Other)
+{
+	local PlayerController PC;
+
+	Super.ModifyPlayer(Other);
+
+	PC = PlayerController(Other.Controller);
+	if ( PC != None )
+		PC.OwnCamera = "";
 }
 
 // ---------------------------------------------------------------------------
@@ -456,6 +487,10 @@ function Timer()
 			// temporary out-of-lives lock must not block the scheduled spawn.
 			ClearRespawnLock(i);
 
+			// Dead players are not spectator targets: keep the camera in
+			// freecam at the death spot / skip to a living player.
+			UpdateSpectatorCamera(PC, i);
+
 			// time up -> vanilla respawn routine
 			if ( Level.TimeSeconds >= Waiting[i].RespawnAt
 				&& !Level.Game.bWaitingToStartMatch
@@ -575,6 +610,10 @@ function RegisterDeath(Controller C)
 	W.Tries			= 0;
 	W.LastCountdown	= -1;		// forces the first countdown pulse immediately
 	W.bRespawnLocked	= false;
+	W.LastViewTarget	= None;
+	W.LastViewLocation	= vect(0,0,0);
+	W.bHasViewLocation	= false;
+	W.bFreeCam		= false;
 	W.RespawnAt		= Level.TimeSeconds + RespawnDelayFor(C);
 
 	Waiting[Waiting.Length] = W;
@@ -586,6 +625,8 @@ function RegisterDeath(Controller C)
 		Bot(C).GotoState('RoundEnded');
 
 	PC = PlayerController(C);
+	if ( PC != None )
+		PC.OwnCamera = "";
 
 	// Humans: lock respawns right away (see the Timer hold-off comment):
 	// DeathMatch.RestartPlayer() refuses to spawn a PRI flagged bOutOfLives,
@@ -650,25 +691,204 @@ function ClearRespawnLock(int i)
 
 /**
  * Vanilla spectator mode, exactly like UnrealPlayer.ServerSpectate() does for
- * Last Man Standing: 'Spectating' state, behind view, cycle to a player view.
+ * Last Man Standing: 'Spectating' state, behind view, view a living player.
  * GameInfo.CanSpectate takes care of the restriction:
  *   team games -> own team members only, DM -> all players.
  */
 function StartSpectating(PlayerController PC)
 {
+	local Controller Target;
+
 	PC.bFrozen		= false;	// carried over from the death camera
 	PC.bPressedJump	= false;
 	PC.SetTimer(0.0, false);
+	PC.OwnCamera	= "";		// no "Now viewing from own camera" chat spam
 
 	PC.GotoState('Spectating');
 	// keep the client in step: force spectating on the client too (the
 	// engine does the same in AskForPawn() for Spectating controllers) so
 	// the FIRE/ALT-FIRE view execs exist there as well
 	PC.ClientGotoState('Spectating', 'Begin');
-	PC.bBehindView	= true;
-	PC.ServerViewNextPlayer();
+
+	// Prefer a living player. If nobody is alive (solo mode with every
+	// player dead, or a full team wipe), go straight to the free camera.
+	Target = FirstLivingSpectateTarget(PC);
+	if ( Target != None )
+	{
+		PC.bBehindView = true;
+		PC.SetViewTarget(Target);
+		PC.ClientSetViewTarget(Target);
+		PC.ClientSetBehindView(true);
+	}
+	else
+	{
+		EnterFreeCam(PC, SpectateSpot(PC));
+	}
 
 	PC.ClientMessage(MsgSpectateHint);
+}
+
+/** Best current position for a free camera: death pawn, controller, or PC. */
+function vector SpectateSpot(PlayerController PC)
+{
+	if ( PC.ViewTarget != None && PC.ViewTarget != PC && !PC.ViewTarget.bDeleteMe )
+		return PC.ViewTarget.Location;
+	if ( PC.RealViewTarget != None && !PC.RealViewTarget.bDeleteMe )
+		return PC.RealViewTarget.Location;
+	return PC.Location;
+}
+
+/** Living player the viewer is allowed to watch? (team rules included) */
+function bool IsLivingSpectateTarget(PlayerController Viewer, Controller C)
+{
+	if ( C == None || C == Viewer || C.bDeleteMe || C.PlayerReplicationInfo == None )
+		return false;
+	if ( C.PlayerReplicationInfo.bOnlySpectator )
+		return false;
+	if ( C.Pawn == None || C.Pawn.bDeleteMe || C.Pawn.Health <= 0 )
+		return false;
+
+	return Level.Game.CanSpectate(Viewer, false, C);
+}
+
+/** First living allowed target, or None when everybody is dead. */
+function Controller FirstLivingSpectateTarget(PlayerController Viewer)
+{
+	local Controller C;
+
+	for ( C = Level.ControllerList; C != None; C = C.NextController )
+		if ( IsLivingSpectateTarget(Viewer, C) )
+			return C;
+
+	return None;
+}
+
+function bool HasLivingSpectateTarget(PlayerController Viewer)
+{
+	return (FirstLivingSpectateTarget(Viewer) != None);
+}
+
+/** Is the current view target a live pawn (not a corpse and not freecam)? */
+function bool IsLivingViewTarget(PlayerController PC)
+{
+	local Pawn P;
+
+	P = Pawn(PC.ViewTarget);
+	if ( P == None && Controller(PC.ViewTarget) != None )
+		P = Controller(PC.ViewTarget).Pawn;
+
+	return (P != None && !P.bDeleteMe && P.Health > 0);
+}
+
+/**
+ * Engine FIRE cycling may land on a dead teammate. Walk the same cycle until
+ * a living target is found; return false when there is nobody left alive.
+ */
+function bool AdvanceToLiving(PlayerController PC)
+{
+	local int Guard, Count;
+	local Controller C;
+
+	for ( C = Level.ControllerList; C != None; C = C.NextController )
+		Count++;
+
+	for ( Guard = 0; Guard <= Count; Guard++ )
+	{
+		PC.ServerViewNextPlayer();
+		if ( IsLivingViewTarget(PC) )
+			return true;
+	}
+
+	return false;
+}
+
+/**
+ * Own free camera, anchored at Loc. This is ServerViewSelf() without its
+ * "Now viewing from own camera" ClientMessage().
+ */
+function EnterFreeCam(PlayerController PC, vector Loc)
+{
+	PC.bBehindView = false;
+	PC.ClientSetBehindView(false);
+	PC.SetLocation(Loc);
+	PC.ClientSetLocation(Loc, PC.Rotation);
+	PC.SetViewTarget(PC);
+	PC.ClientSetViewTarget(PC);
+}
+
+/**
+ * Keep the waiting spectator camera sane every supervisor tick:
+ *  - while the watched player is alive, remember their location;
+ *  - when that player dies, stay at the death spot in free camera;
+ *  - when FIRE lands on an already-dead player, skip to the next living one;
+ *  - when nobody is alive, force free camera.
+ */
+function UpdateSpectatorCamera(PlayerController PC, int i)
+{
+	local Actor		VT;
+	local Pawn		P;
+	local vector	Loc;
+	local bool		bLiving, bVanished;
+
+	VT = PC.ViewTarget;
+
+	if ( VT == PC )
+	{
+		// Already in freecam. Anchor once if we arrived here because the
+		// watched pawn vanished, then leave the player free to orbit.
+		if ( !Waiting[i].bFreeCam && Waiting[i].bHasViewLocation )
+			EnterFreeCam(PC, Waiting[i].LastViewLocation);
+		Waiting[i].bFreeCam		= true;
+		Waiting[i].LastViewTarget	= PC;
+		return;
+	}
+
+	P = Pawn(VT);
+	if ( P == None && Controller(VT) != None )
+		P = Controller(VT).Pawn;
+
+	bLiving = (P != None && !P.bDeleteMe && P.Health > 0);
+	if ( bLiving )
+	{
+		Waiting[i].LastViewTarget	= VT;
+		Waiting[i].LastViewLocation	= P.Location;
+		Waiting[i].bHasViewLocation	= true;
+		Waiting[i].bFreeCam		= false;
+		return;
+	}
+
+	// The view target is dead / gone: its location is the death spot.
+	// A destroyed pawn can linger as a zeroed actor for a tick, so prefer
+	// the last position we saw while it was alive.
+	bVanished = ( VT == None || VT.bDeleteMe
+		|| (P != None && P.bDeleteMe) );
+	if ( P != None && !P.bDeleteMe )
+		Loc = P.Location;
+	else if ( Waiting[i].bHasViewLocation )
+		Loc = Waiting[i].LastViewLocation;
+	else if ( VT != None && !VT.bDeleteMe )
+		Loc = VT.Location;
+	else if ( PC.RealViewTarget != None && !PC.RealViewTarget.bDeleteMe )
+		Loc = PC.RealViewTarget.Location;
+	else
+		Loc = PC.Location;
+
+	// FIRE just moved us onto a dead player -> skip it, don't park there.
+	// (If the player we were already watching just died, VT is still the
+	// LastViewTarget - or it vanished - and we fall through to freecam at
+	// the death spot.)
+	if ( !bVanished && VT != Waiting[i].LastViewTarget
+		&& HasLivingSpectateTarget(PC) )
+	{
+		if ( AdvanceToLiving(PC) )
+			return;
+	}
+
+	EnterFreeCam(PC, Loc);
+	Waiting[i].bFreeCam		= true;
+	Waiting[i].LastViewTarget	= PC;
+	Waiting[i].LastViewLocation	= Loc;
+	Waiting[i].bHasViewLocation	= true;
 }
 
 // ---------------------------------------------------------------------------

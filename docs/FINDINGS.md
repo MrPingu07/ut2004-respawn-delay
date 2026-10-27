@@ -86,6 +86,14 @@ state Spectating extends BaseSpectating
   (`MoveSmooth(SpectateSpeed * ...)`).
 * `ServerViewNextPlayer()` (6284) iterates `Level.ControllerList` and filters
   through `Level.Game.CanSpectate(self, bRealSpec, C)`.
+* Neither `TeamGame.CanSpectate` nor `DeathMatch.CanSpectate` checks whether
+  the target's pawn is alive, so the vanilla FIRE cycle can land on a corpse.
+  The mutator's supervisor therefore checks `C.Pawn.Health > 0` itself and
+  advances past dead targets. `ServerViewNextPlayer()` is still used for the
+  actual cycling, so team/game filtering remains vanilla.
+* When the watched pawn dies the controller's `ViewTarget` may stay on the
+  dead pawn or become `None`/`self`; the supervisor records the last live
+  location each tick and anchors free camera there in either case.
 * `TeamGame.CanSpectate` (UnrealGame/TeamGame.uc:783): a *player* (not a real
   spectator) may only view members of his **own team**.
 * `DeathMatch.CanSpectate` (UnrealGame/DeathMatch.uc:719): a player may view

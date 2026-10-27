@@ -69,9 +69,9 @@ The mutator (`RespawnDelay.RespawnDelay`) runs a **supervisor** on its own
 3. **Spectator mode** — after `max(DeathCamTime, SpectateDelay)` (default
    3.0 s via `SpectateDelay`), the controller is moved exactly the way vanilla
    LMS does (`UnrealPlayer.ServerSpectate`):
-   `GotoState('Spectating')`, `bBehindView = true`,
-   `ServerViewNextPlayer()`. Remaining frozen/jump flags from the death camera
-   are cleared, the controller's pending Timer cancelled.
+   `GotoState('Spectating')`, `bBehindView = true`, and a living player is
+   selected (or free camera when nobody is alive). Remaining frozen/jump flags
+   from the death camera are cleared, the controller's pending Timer cancelled.
    * **The hold-off locks respawns with `PRI.bOutOfLives`.** In `state Dead`,
      `ServerReStartPlayer()` honours any respawn request
      (`PlayerCanRestart()` → `RestartPlayer()`), so pressing FIRE once the 1 s
@@ -90,9 +90,16 @@ The mutator (`RespawnDelay.RespawnDelay`) runs a **supervisor** on its own
      / `CheckEndGame()` read `bOutOfLives` to decide the match is over, so a
      temporary lock could look like a full wipe. The chosen power node is kept
      by Onslaught for the scheduled spawn.
-   * FIRE cycles player views; `TeamGame.CanSpectate` limits players to their
-     own team, DM allows everybody — no additional code needed.
-   * ALT-FIRE returns to the own (flying) camera.
+   * FIRE cycles **living** player views; `TeamGame.CanSpectate` limits
+     players to their own team, DM allows everybody. The supervisor filters
+     out dead targets (the engine's own cycle does not), and when FIRE lands
+     on a corpse it advances to the next living player. If the player being
+     watched dies, the camera anchors at that death spot in free camera
+     instead of following the corpse. With every player dead (always the case
+     at a solo-mode wipe), free camera is forced immediately.
+   * ALT-FIRE returns to the own (flying) camera. Every player's
+     `PlayerController.OwnCamera` is emptied, so `ServerViewSelf()` does not
+     print its vanilla "Now viewing from own camera" chat line.
    * `Possess()` would refuse to possess a `bOnlySpectator` PC, so waiting
      players keep their normal player flags (scoreboard, team, chat intact).
 4. **Respawn** — when `Level.TimeSeconds >= RespawnAt` (and the match is not
@@ -263,7 +270,11 @@ wave-cycle preset on the mutator "Configure"/admin Rules pages:
    - die → death camera ≈ 1 s → spectator fly view on a player only after the
      `SpectateDelay` (3 s default) has elapsed
    - press FIRE during that hold-off → nothing happens (no early respawn)
-   - `_ "FIRE"` cycles, AltFire returns to own camera (once spectating)
+   - `_ "FIRE"` cycles living players only; AltFire returns to free camera
+     with no "Now viewing from own camera" chat line
+   - let the watched player die → camera stays at that death spot in free
+     camera (can be moved around), it does not follow the corpse
+   - with every player dead, free camera is entered automatically
    - console message shows the locked delay; respawn happens only after it
    - `mutate respawnstatus` while waiting prints the remaining time
 2. Team games: everyone dying within the same cycle shows counts that all
@@ -295,5 +306,7 @@ wave-cycle preset on the mutator "Configure"/admin Rules pages:
    FINDINGS §8): die → watch a team-mate through the wait → at RespawnAt the
    view must switch back to the own pawn, in first person with the weapon in
    hand, without waiting for the watched player's death; `mutate respawnstatus`
-   prints a remaining time > 0 during the whole wait; FIRE cycles views, not
-   respawn.
+   prints a remaining time > 0 during the whole wait; FIRE cycles living views,
+   not respawn; if the watched player dies, the client camera stays at the
+   death spot in free camera; if everyone dies, free camera is forced; AltFire
+   prints no chat line.
