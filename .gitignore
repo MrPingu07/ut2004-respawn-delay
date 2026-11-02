@@ -1,0 +1,21 @@
+# build/run artifacts that never belong in version control
+*.kdev*
+*~
+*.swp
+
+# locally-exported engine sources (docs/FINDINGS.md explains the command)
+/export*/
+
+# binary packages built straight into the game copy
+*.u
+*.ucl
+
+# ...except the tracked release binary that make.sh refreshes. GitHub Actions
+# packages this because it cannot run the UT2004 compiler.
+!prebuilt/System/*.u
+!prebuilt/System/*.ucl
+
+# locally generated release zips
+/dist/
+
+# built/install output lives in $UT2004_DIR/System, not here

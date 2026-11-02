@@ -37,24 +37,67 @@ no longer respawn you early and skip the remaining delay. (Games with
 safely, because the game reads the same flag to detect a match wipe; there the
 spawn map keeps its vanilla instant-respawn behaviour.)
 
-## Build
+## Install
 
-```bash
-./make.sh
+Download the latest `RespawnDelay-<version>.zip` from the
+[Releases](https://github.com/MrPingu07/ut2004-respawn-delay/releases) page.
+It is a normal UT2004 mutator package — no installer:
+
+```
+RespawnDelay-<version>.zip
+├── README.md
+└── RespawnDelay/
+    ├── RespawnDelay.u      compiled mutator
+    ├── RespawnDelay.ucl    mutator cache
+    └── RespawnDelay.int    name and description for the mutator list
 ```
 
-Builds the package through wine (`UCC.exe make`) into
-`~/Juegos/UT2004/System/RespawnDelay.u` and deploys the `.int`/`.ucl`.
-Requires `EditPackages=RespawnDelay` in `UT2004.ini` (already present here).
+Extract the zip into your UT2004 installation folder (the one that contains
+`System/`) on every client and on the server. The files land in
+`RespawnDelay/` next to `System/` so `ucc` can find the package. Start the
+game, open **Mutators**, enable **Respawn Delay**, and optionally press
+**[Configure]**. When upgrading, overwrite the three `RespawnDelay.*` files.
 
-## Enable in-game
-
-Add "Respawn Delay" to the mutator list in Instant Action / the server
-browser, or run a map with:
+For a server, add the mutator to the command line or server setup:
 
 ```
 open CTF-FaceClassic?mutator=RespawnDelay.RespawnDelay
 ```
+
+The server and its clients all need the same `RespawnDelay/RespawnDelay.u`;
+clients joining an internet server can also get it from a redirect server.
+
+## Build from source (developers)
+
+Building needs a full UT2004 installation (the Windows edition, run through
+Wine on Linux or natively on Windows) because `ucc make` compiles against the
+retail packages.
+
+```bash
+export UT2004_DIR=/path/to/UT2004
+./make.sh                       # compile, install, refresh prebuilt/
+```
+
+`make.sh` is idempotent: it links the package dir into the game root, makes
+sure `EditPackages=RespawnDelay` is present in `UT2004.ini`, compiles
+`System/RespawnDelay.u`, deploys `.int`/`.ucl`, and refreshes the tracked
+release artifacts in `prebuilt/`.
+
+### Packaging a release
+
+GitHub Actions cannot compile UnrealScript, so the compiled package is
+committed under `prebuilt/` and CI only zips it with `tools/package.sh`.
+`make.sh` refreshes `prebuilt/`; `tools/package.sh` refuses to package if
+the source classes changed since that build.
+
+```bash
+./make.sh                              # refresh prebuilt/ after source changes
+tools/package.sh 1.7                   # -> dist/RespawnDelay-1.7.zip
+tools/release.sh 1.7 --publish         # build + package + create/update the GitHub release
+```
+
+Commit `prebuilt/` together with any source change, otherwise the release
+workflow will (correctly) fail the staleness check.
 
 ## Configuration
 

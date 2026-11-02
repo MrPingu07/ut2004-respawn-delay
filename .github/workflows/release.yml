@@ -1,33 +1,41 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - 'v*'
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to package (for example 1.7, without the v)"
+        required: true
 
 permissions:
   contents: write
 
 jobs:
-  release:
+  package:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
+        uses: actions/checkout@v7
 
-      - name: Build .zip from the tag
-        run: |
-          git archive --format=zip \
-            --output="ut2004-respawn-delay_${GITHUB_REF_NAME}.zip" \
-            "${GITHUB_REF_NAME}"
-
-      - name: Create GitHub release with .zip asset
+      # The workflow cannot compile UnrealScript (ucc needs the retail game
+      # files), so it packages the binary committed by make.sh. The script
+      # fails if prebuilt/ is older than source/.
+      - name: Build release zip
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "${GITHUB_REF_NAME}" \
-            "ut2004-respawn-delay_${GITHUB_REF_NAME}.zip" \
-            --title "Respawn Delay ${GITHUB_REF_NAME}" \
-            --generate-notes
+          VERSION: ${{ inputs.version || github.ref_name }}
+        run: tools/package.sh "${VERSION#v}"
+
+      - name: Upload release asset
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v3
+        with:
+          files: "dist/RespawnDelay-*.zip"
+
+      - name: Upload workflow artifact
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v7
+        with:
+          name: RespawnDelay-${{ inputs.version }}
+          path: "dist/RespawnDelay-*.zip"
