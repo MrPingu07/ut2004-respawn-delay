@@ -67,8 +67,6 @@ static function string ExpandTokens(string Msg, GameReplicationInfo GRI,
                                     bool bTeamGame, LevelInfo L)
 {
     local PlayerReplicationInfo Top;
-    local PlayerReplicationInfo TopTeam;
-    local int TopTeamIndex;
     local int LeadIndex;
 
     if (Msg == "")
@@ -81,11 +79,6 @@ static function string ExpandTokens(string Msg, GameReplicationInfo GRI,
     Msg = Caps(Msg);
 
     Top = FindTopPlayer(GRI, -1);
-
-    // Team of the global leader: the only viewer-independent "top team".
-    TopTeamIndex = -1;
-    if (Top != None && Top.Team != None)
-        TopTeamIndex = Top.Team.TeamIndex;
 
     // Longest tokens first.
     if (Top == None)
@@ -103,20 +96,6 @@ static function string ExpandTokens(string Msg, GameReplicationInfo GRI,
     // they fall back to generic values.
     if (bTeamGame)
     {
-        if (TopTeamIndex < 0)
-        {
-            ReplaceText(Msg, "$TOPTEAMSHORT", FALLBACK_TEAM);
-            ReplaceText(Msg, "$TOPTEAMNAME", FALLBACK_TEAM);
-            ReplaceText(Msg, "$TOPTEAMFRAGGER", FALLBACK_NAME);
-        }
-        else
-        {
-            ReplaceText(Msg, "$TOPTEAMSHORT", GetTeamShortNameByIndex(GRI, TopTeamIndex));
-            ReplaceText(Msg, "$TOPTEAMNAME", GetTeamNameByIndex(GRI, TopTeamIndex));
-            TopTeam = FindTopPlayer(GRI, TopTeamIndex);
-            ReplaceText(Msg, "$TOPTEAMFRAGGER", GetPlayerName(TopTeam));
-        }
-
         LeadIndex = GetLeadTeamIndex(GRI);
         ReplaceText(Msg, "$LEADTEAMSHORT", GetTeamShortNameByIndex(GRI, LeadIndex));
         ReplaceText(Msg, "$LEADTEAMNAME", GetTeamNameByIndex(GRI, LeadIndex));
@@ -132,8 +111,6 @@ static function string ExpandTokens(string Msg, GameReplicationInfo GRI,
     else
     {
         // Non-team game: replace team tokens with fallbacks or hide them
-        ReplaceText(Msg, "$TOPTEAMSHORT", "");
-        ReplaceText(Msg, "$TOPTEAMNAME", "");
         ReplaceText(Msg, "$LEADTEAMSHORT", "");
         ReplaceText(Msg, "$LEADTEAMNAME", "");
         ReplaceText(Msg, "$LEADTEAMFRAGGER", "");
@@ -175,8 +152,7 @@ static function bool HasTeamOnlyTokens(string Msg)
 
     U = Caps(Msg);
 
-    return (InStr(U, "$TOPTEAM") >= 0)
-        || (InStr(U, "$LEADTEAM") >= 0)
+    return (InStr(U, "$LEADTEAM") >= 0)
         || (InStr(U, "$REDVAL") >= 0)
         || (InStr(U, "$BLUEVAL") >= 0);
 }
