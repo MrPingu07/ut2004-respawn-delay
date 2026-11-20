@@ -26,6 +26,10 @@ class RespawnDelayFeed extends Object
 
 var config array<string> Messages;
 
+// Fallback config section name for MutTechDirector compatibility.
+const MUT_TECH_DIRECTOR_FEED_CLASS = "MutTechDirector.DirectorFeed";
+const MUT_TECH_DIRECTOR_FEED_SECTION = "MutTechDirector.DirectorFeed";
+
 // Fallbacks keep every token non-empty so a message never collapses because
 // a value is unavailable (no GRI yet, warmup, empty board, etc.).
 const FALLBACK_MAP      = "Unknown Arena";
@@ -151,6 +155,7 @@ static function string ExpandTokens(string Msg, GameReplicationInfo GRI,
     ReplaceText(Msg, "$TIMEREMAINING", GetTimeRemaining(GRI));
 
     // Dynamic $RANDOM<min>_<max> tokens (optionally K/M-scaled).
+    // Also handles legacy %RANDOM tokens for MutTechDirector compat.
     Msg = ExpandRandomTokens(Msg);
 
     // Second pass: force inserted values (usernames, map/server/team names)
@@ -186,91 +191,6 @@ static function int RollRange(int Min, int Max)
         return Min;
 
     return Min + Rand(Max - Min + 1);
-}
-
-/**
- * Expand every well-formed $RANDOM<min>_<max> token, with an optional K or M
- * suffix on the maximum.  Examples:
- *
- *     $RANDOM1_9       -> 1..9
- *     $RANDOM25_50     -> 25..50
- *     $RANDOM1_50K     -> 1..50000, printed as a grouped integer (43.781)
- *     $RANDOM1_5M      -> 1..5000000, clamped to the hard ceiling below
- *
- * UnrealScript has no regex, so the token is parsed by hand.  Malformed
- * occurrences are left untouched and scanning resumes after them, so one bad
- * token does not prevent later valid tokens from expanding.
- */
-static function string ExpandRandomTokens(string Msg)
-{
-    local int SearchFrom, Pos, i, MinStart, MinVal, MaxVal, Mult;
-    local string Token, Suffix;
-
-    SearchFrom = 0;
-    while (SearchFrom < Len(Msg))
-    {
-        Pos = InStr(Right(Msg, Len(Msg) - SearchFrom), "$RANDOM");
-        if (Pos < 0)
-            break;
-        Pos += SearchFrom;
-
-        i = Pos + Len("$RANDOM");
-
-        // Minimum: one or more digits.
-        MinStart = i;
-        while (i < Len(Msg) && IsDigit(Mid(Msg, i, 1)))
-            i++;
-        if (i == MinStart || i >= Len(Msg) || Mid(Msg, i, 1) != "_")
-        {
-            SearchFrom = Pos + 1;
-            continue;
-        }
-        MinVal = ParseDigits(Mid(Msg, MinStart, i - MinStart));
-        i++;
-
-        // Maximum: one or more digits.
-        MinStart = i;
-        while (i < Len(Msg) && IsDigit(Mid(Msg, i, 1)))
-            i++;
-        if (i == MinStart)
-        {
-            SearchFrom = Pos + 1;
-            continue;
-        }
-        MaxVal = ParseDigits(Mid(Msg, MinStart, i - MinStart));
-
-        // Optional scale suffix.
-        Mult = 1;
-        if (i < Len(Msg))
-        {
-            Suffix = Mid(Msg, i, 1);
-            if (Suffix == "K")
-            {
-                Mult = 1000;
-                i++;
-            }
-            else if (Suffix == "M")
-            {
-                Mult = 1000000;
-                i++;
-            }
-        }
-
-        // Clamp before multiplying to keep the int arithmetic safe.
-        if (MaxVal > MAX_RANDOM / Mult)
-            MaxVal = MAX_RANDOM / Mult;
-        MaxVal *= Mult;
-
-        if (MaxVal >= MinVal)
-        {
-            Token = Mid(Msg, Pos, i - Pos);
-            ReplaceText(Msg, Token, FormatNumber(RollRange(MinVal, MaxVal)));
-        }
-
-        SearchFrom = Pos + 1;
-    }
-
-    return Msg;
 }
 
 static function bool IsDigit(string S)
@@ -672,6 +592,145 @@ static function string FormatClock(int Seconds)
         return string(Minutes) $ ":0" $ string(Rest);
 
     return string(Minutes) $ ":" $ string(Rest);
+}
+
+/**
+ * Merge messages from the primary RespawnDelay feed and (optionally) the
+ * MutTechDirector DirectorFeed section.  This lets an existing
+ * MutTechDirector.ini with a populated DirectorFeed work immediately when
+ * RespawnDelay is added to the mutator list, without copying messages.
+ *
+ * Order: RespawnDelayFeed messages first, then DirectorFeed messages appended.
+ * Both sections use the same token syntax ($TOPFRAGGER, $MAPNAME, $RANDOM...).
+ * The function also normalises the legacy %RANDOM prefix to $RANDOM.
+ */
+static function array<string> GetMergedFeedMessages()
+{
+    local array<string> Out;
+    local array<string> Extra;
+    local int i, Count, ExtraCount;
+    local Object FeedObj;
+
+    // Primary feed (RespawnDelay.ini -> [RespawnDelay.RespawnDelayFeed])
+    Count = class'RespawnDelayFeed'.default.Messages.Length;
+    Out.Length = Count;
+    for (i = 0; i < Count; i++)
+        Out[i] = class'RespawnDelayFeed'.default.Messages[i];
+
+    // Optional secondary feed (MutTechDirector.ini -> [MutTechDirector.DirectorFeed])
+    // We can't use config() on a different class at runtime, so we try to load the
+    // MutTechDirector.DirectorFeed class and read its default.Messages if it exists.
+    FeedObj = DynamicLoadObject(MUT_TECH_DIRECTOR_FEED_CLASS, class'Class');
+    if (FeedObj != None)
+    {
+        Extra = class'MutTechDirector.DirectorFeed'.default.Messages;
+        ExtraCount = Extra.Length;
+        if (ExtraCount > 0)
+        {
+            Out.Length = Count + ExtraCount;
+            for (i = 0; i < ExtraCount; i++)
+                Out[Count + i] = Extra[i];
+        }
+    }
+
+    return Out;
+}
+
+/**
+ * Count of messages available from the merged feed (primary + MutTechDirector).
+ */
+static function int GetMergedFeedCount()
+{
+    local array<string> Msgs;
+    Msgs = GetMergedFeedMessages();
+    return Msgs.Length;
+}
+
+/**
+ * Expand both $RANDOM and legacy %RANDOM tokens.  MutTechDirector.ini uses
+ * %RANDOM in a few places; we treat it as an alias for $RANDOM so the same
+ * feed works without editing.
+ */
+static function string ExpandRandomTokens(string Msg)
+{
+    local int SearchFrom, Pos, i, MinStart, MinVal, MaxVal, Mult;
+    local string Token, Suffix, Prefix;
+
+    SearchFrom = 0;
+    while (SearchFrom < Len(Msg))
+    {
+        // Try $RANDOM first
+        Pos = InStr(Right(Msg, Len(Msg) - SearchFrom), "$RANDOM");
+        Prefix = "$RANDOM";
+
+        // If not found, try legacy %RANDOM (MutTechDirector compat)
+        if (Pos < 0)
+        {
+            Pos = InStr(Right(Msg, Len(Msg) - SearchFrom), "%RANDOM");
+            Prefix = "%RANDOM";
+        }
+
+        if (Pos < 0)
+            break;
+
+        Pos += SearchFrom;
+        i = Pos + Len(Prefix);
+
+        // Minimum: one or more digits.
+        MinStart = i;
+        while (i < Len(Msg) && IsDigit(Mid(Msg, i, 1)))
+            i++;
+        if (i == MinStart || i >= Len(Msg) || Mid(Msg, i, 1) != "_")
+        {
+            SearchFrom = Pos + 1;
+            continue;
+        }
+        MinVal = ParseDigits(Mid(Msg, MinStart, i - MinStart));
+        i++;
+
+        // Maximum: one or more digits.
+        MinStart = i;
+        while (i < Len(Msg) && IsDigit(Mid(Msg, i, 1)))
+            i++;
+        if (i == MinStart)
+        {
+            SearchFrom = Pos + 1;
+            continue;
+        }
+        MaxVal = ParseDigits(Mid(Msg, MinStart, i - MinStart));
+
+        // Optional scale suffix.
+        Mult = 1;
+        if (i < Len(Msg))
+        {
+            Suffix = Mid(Msg, i, 1);
+            if (Suffix == "K")
+            {
+                Mult = 1000;
+                i++;
+            }
+            else if (Suffix == "M")
+            {
+                Mult = 1000000;
+                i++;
+            }
+        }
+
+        // Clamp before multiplying to keep the int arithmetic safe.
+        if (MaxVal > MAX_RANDOM / Mult)
+            MaxVal = MAX_RANDOM / Mult;
+        MaxVal *= Mult;
+
+        if (MaxVal >= MinVal)
+        {
+            Token = Mid(Msg, Pos, i - Pos);
+            ReplaceText(Msg, Token, FormatNumber(RollRange(MinVal, MaxVal)));
+        }
+
+        SearchFrom = Pos + 1;
+    }
+
+    return Msg;
 }
 
 defaultproperties

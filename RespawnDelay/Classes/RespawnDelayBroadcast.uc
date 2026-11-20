@@ -172,7 +172,8 @@ function AdvanceMessage()
 
 	bTeamGame = (Level.Game != None && Level.Game.bTeamGame);
 
-	Source = class'RespawnDelayFeed'.default.Messages;
+	// Use merged feed: RespawnDelayFeed + optional MutTechDirector DirectorFeed
+	Source = class'RespawnDelayFeed'.static.GetMergedFeedMessages();
 	Count = Source.Length;
 
 	// A changed source invalidates old bag indices.
