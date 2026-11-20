@@ -23,7 +23,7 @@ if [ ! -f "$SYS/UCC.exe" ]; then
 fi
 
 # make the source tree visible to UCC (package dir must sit at the game root)
-ln -sfn "$PKG" "$GAME_DIR/RespawnDelay"
+rm -rf "$GAME_DIR/RespawnDelay" && cp -r "$PKG" "$GAME_DIR/RespawnDelay"
 
 cd "$SYS"
 

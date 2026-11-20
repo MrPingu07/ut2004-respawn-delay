@@ -608,7 +608,6 @@ static function array<string> GetMergedFeedMessages()
                 Out[Count + i] = Extra[i];
         }
     }
-
     return Out;
 }
 

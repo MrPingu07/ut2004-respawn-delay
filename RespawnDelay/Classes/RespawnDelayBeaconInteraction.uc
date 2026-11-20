@@ -13,16 +13,31 @@
 class RespawnDelayBeaconInteraction extends Interaction;
 
 var transient PlayerController PC;
+var transient float SavedBeaconMaxDist;
+var transient float SavedBeaconInfoMaxDist;
+var transient bool bBeaconRangesSaved;
 
 function Cleanup()
 {
     bVisible = False;
     bActive = False;
 
+    if (PC != None && !PC.bDeleteMe && bBeaconRangesSaved)
+    {
+        PC.TeamBeaconMaxDist = SavedBeaconMaxDist;
+        PC.TeamBeaconPlayerInfoMaxDist = SavedBeaconInfoMaxDist;
+    }
+    bBeaconRangesSaved = False;
+
     if (Master != None)
         Master.RemoveInteraction(Self);
 
     PC = None;
+}
+
+event NotifyLevelChange()
+{
+    Cleanup();
 }
 
 function Tick(float DeltaTime)
@@ -38,6 +53,16 @@ function Tick(float DeltaTime)
         Cleanup();
         return;
     }
+
+    if (!bBeaconRangesSaved)
+{
+    SavedBeaconMaxDist = PC.TeamBeaconMaxDist;
+    SavedBeaconInfoMaxDist = PC.TeamBeaconPlayerInfoMaxDist;
+    bBeaconRangesSaved = True;
+}
+PC.TeamBeaconMaxDist = 0.0;
+PC.TeamBeaconPlayerInfoMaxDist = 0.0;
+
 }
 
 event PostRender(Canvas C)
@@ -117,7 +142,7 @@ event PostRender(Canvas C)
         }
 
         P = Ctr.Pawn;
-        Head = P.Location + vect(0, 0, 60);
+        Head = P.Location + vect(0, 0, 50);
 
         // Skip anything behind the camera.
         if ((Head - CamLoc) Dot vector(CamRot) <= 0.0)

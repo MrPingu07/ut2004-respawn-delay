@@ -241,8 +241,14 @@ simulated function DrawBanner(Canvas C)
     if (PlayerOwner == None)
         return;
     
+    // Obtain GameReplicationInfo early so team detection can fall back to it
+    GRI = PlayerOwner.GameReplicationInfo;
+    if (GRI == None && Level != None)
+        GRI = Level.GRI;
+
     // Determine if we're in a team game
-    bTeamGame = (PlayerOwner.Level != None && PlayerOwner.Level.Game != None && PlayerOwner.Level.Game.bTeamGame);
+    bTeamGame = ((PlayerOwner.Level != None && PlayerOwner.Level.Game != None && PlayerOwner.Level.Game.bTeamGame)
+        || (GRI != None && GRI.bTeamGame));
     
     // Try to get target info for team color (who we're spectating)
     TargetPawn = Pawn(PlayerOwner.ViewTarget);
@@ -328,67 +334,62 @@ simulated function DrawBanner(Canvas C)
     );
     C.Style = ERenderStyle.STY_Normal;
     
-    // Team score counter at top center (hidden during F1) - simple integers only, 2x size
-    // Only show in team games
-    MyHUD = PlayerOwner.myHUD;
-    if (bTeamGame && PlayerOwner != None && MyHUD != None && !MyHUD.bShowScoreBoard)
+    // Team score counter + match time at top center - same font and scale as clock
+    if (bTeamGame && PlayerOwner != None && GRI != None && GRI.Teams[0] != None && GRI.Teams[1] != None)
     {
-        GRI = PlayerOwner.GameReplicationInfo;
-        if (GRI != None && ArrayCount(GRI.Teams) >= 2)
+        RedScore = string(int(GRI.Teams[0].Score));
+        BlueScore = string(int(GRI.Teams[1].Score));
+
+        C.FontScaleX = 1.0;
+        C.FontScaleY = 1.0;
+        C.StrLen("X", Dummy, PH);
+
+        TimeY = 15.0 * Scale;
+
+        // Match time remaining (mm:ss) in white at top center
+        if (Level.Game != None && Level.Game.TimeLimit > 0)
         {
-            RedScore = string(int(GRI.Teams[0].Score));
-            BlueScore = string(int(GRI.Teams[1].Score));
-            
-            C.Font = C.MedFont;
-            C.FontScaleX = 2.0;
-            C.FontScaleY = 2.0;
-            C.StrLen(RedScore, RedW, PH);
-            C.StrLen(BlueScore, BlueW, PH);
-            C.StrLen(" - ", DashW, PH);
-            
-            // Match time remaining (mm:ss) in white above score counter
-            if (Level.Game != None)
-            {
-                Minutes = int((Level.Game.TimeLimit * 60.0 - Level.TimeSeconds) / 60.0);
-                Seconds = int((Level.Game.TimeLimit * 60.0 - Level.TimeSeconds)) % 60;
-                if (Minutes < 0) Minutes = 0;
-                if (Seconds < 0) Seconds = 0;
-                TimeStr = string(Minutes) $ ":" $ string(Seconds);
-                if (Seconds < 10) TimeStr = string(Minutes) $ ":0" $ string(Seconds);
-                
-                C.StrLen(TimeStr, TimeW, PH);
-                TimeY = 16.0 * Scale;
-                C.SetDrawColor(255, 255, 255, 255);
-                C.SetPos((C.ClipX - TimeW) * 0.5, TimeY);
-                C.DrawText(TimeStr);
-            }
-            
-            // Centered text: Red - Blue
-            TTotalW = RedW + DashW + BlueW;
-            TStartX = (C.ClipX - TTotalW) * 0.5;
-            TScoreY = 16.0 * Scale;
-            if (Level.Game != None && Level.Game.TimeLimit > 0)
-                TScoreY = TScoreY + PH * 2.5;
-            
-            // Red score
-            C.SetDrawColor(255, 80, 80, 255);
-            C.SetPos(TStartX, TScoreY);
-            C.DrawText(RedScore);
-            
-            // Dash
+            Minutes = int((Level.Game.TimeLimit * 60.0 - Level.TimeSeconds) / 60.0);
+            Seconds = int((Level.Game.TimeLimit * 60.0 - Level.TimeSeconds)) % 60;
+            if (Minutes < 0) Minutes = 0;
+            if (Seconds < 0) Seconds = 0;
+            TimeStr = string(Minutes) $ ":" $ string(Seconds);
+            if (Seconds < 10) TimeStr = string(Minutes) $ ":0" $ string(Seconds);
+
+            C.StrLen(TimeStr, TimeW, Dummy);
             C.SetDrawColor(255, 255, 255, 255);
-            C.SetPos(TStartX + RedW, TScoreY);
-            C.DrawText(" - ");
-            
-            // Blue score
-            C.SetDrawColor(100, 150, 255, 255);
-            C.SetPos(TStartX + RedW + DashW, TScoreY);
-            C.DrawText(BlueScore);
-            
-            // Reset font scale
-            C.FontScaleX = 1.0;
-            C.FontScaleY = 1.0;
+            C.SetPos((C.ClipX - TimeW) * 0.5, TimeY);
+            C.DrawText(TimeStr);
+
+            TScoreY = TimeY + PH + 4.0 * Scale;
         }
+        else
+        {
+            TScoreY = TimeY;
+        }
+
+        // Centered score string: Red - Blue (same font & scale as clock)
+        C.StrLen(RedScore, RedW, Dummy);
+        C.StrLen(" - ", DashW, Dummy);
+        C.StrLen(BlueScore, BlueW, Dummy);
+
+        TTotalW = RedW + DashW + BlueW;
+        TStartX = (C.ClipX - TTotalW) * 0.5;
+
+        //Red Score
+        C.SetDrawColor(255, 80, 80, 255);
+        C.SetPos(TStartX, TScoreY);
+        C.DrawText(RedScore);
+
+        //Dash
+        C.SetDrawColor(255, 255, 255, 255);
+        C.SetPos(TStartX + RedW, TScoreY);
+        C.DrawText(" - ");
+
+        //Blue score
+        C.SetDrawColor(100, 150, 255, 255);
+        C.SetPos(TStartX + RedW + DashW, TScoreY);
+        C.DrawText(BlueScore);
     }
     
     // Typewriter + blinking cursor banner (centered, no horizontal motion)
