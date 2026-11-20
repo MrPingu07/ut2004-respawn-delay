@@ -144,6 +144,12 @@ var() config bool	AffectInvasion;
  */
 var() config bool	AffectAssault;
 
+/** Enable the spectator banner broadcast (typewriter messages at bottom of screen). */
+var() config bool	EnableBanner;
+
+/** Enable team-colored beacons for spectators (show living teammates/all players). */
+var() config bool	EnableBeacons;
+
 // ---------------------------------------------------------------------------
 // Localization (see RespawnDelay.int)
 // ---------------------------------------------------------------------------
@@ -250,6 +256,27 @@ function ModifyPlayer(Pawn Other)
 		PC.OwnCamera = "";
 }
 
+function NotifyLogout(Controller Exiting)
+{
+	local PlayerController PC;
+	local int WaitIdx;
+
+	PC = PlayerController(Exiting);
+	if ( PC != None )
+	{
+		WaitIdx = GetWaitingIndex(PC);
+		if ( WaitIdx >= 0 )
+		{
+			SetSpectatorOverlays(PC, false);
+			ClearRespawnLock(WaitIdx);
+			ClearCountdown(WaitIdx);
+			Waiting.Remove(WaitIdx, 1);
+		}
+	}
+
+	Super.NotifyLogout(Exiting);
+}
+
 // ---------------------------------------------------------------------------
 // Respawn math
 // ---------------------------------------------------------------------------
@@ -331,7 +358,13 @@ function Timer()
 		// the game takes over from here; drop everything (and never leave our
 		// temporary out-of-lives lock behind)
 		for ( i = 0; i < Waiting.Length; i++ )
+		{
+			PC = PlayerController(Waiting[i].C);
+			if ( PC != None )
+				SetSpectatorOverlays(PC, false);
 			ClearRespawnLock(i);
+			ClearCountdown(i);
+		}
 		Waiting.Remove(0, Waiting.Length);
 		return;
 	}
@@ -358,6 +391,10 @@ function Timer()
 			B = Bot(C);
 			if ( B != None && C.Pawn == None )
 				B.GotoState('Dead');
+			// Clean up banner HUD and beacon interaction for humans
+			PC = PlayerController(C);
+			if ( PC != None )
+				SetSpectatorOverlays(PC, false);
 			ClearRespawnLock(i);
 			ClearCountdown(i);
 			Waiting.Remove(i, 1);
@@ -422,6 +459,7 @@ function Timer()
 		// back so the round machinery owns it.
 		if ( bIsAssault && ASGameInfo(Level.Game).ResetCountDown != 0 )
 		{
+			SetSpectatorOverlays(PC, false);
 			ClearRespawnLock(i);
 			ClearCountdown(i);
 			Waiting.Remove(i, 1);
@@ -431,6 +469,7 @@ function Timer()
 		// match/round machinery moved the controller (state 'RoundEnded', ...)
 		if ( !PC.IsInState('Dead') && !PC.IsInState('Spectating') )
 		{
+			SetSpectatorOverlays(PC, false);
 			ClearRespawnLock(i);
 			ClearCountdown(i);
 			Waiting.Remove(i, 1);
@@ -519,6 +558,7 @@ function Timer()
 				// hand back to the vanilla dead state
 				if ( Waiting[i].Tries > 30 )
 				{
+					SetSpectatorOverlays(PC, false);
 					ClearRespawnLock(i);
 					ClearCountdown(i);
 					PC.GotoState('Dead');
@@ -626,7 +666,17 @@ function RegisterDeath(Controller C)
 
 	PC = PlayerController(C);
 	if ( PC != None )
+	{
 		PC.OwnCamera = "";
+
+		// Install the banner HUD immediately, so it covers the whole wait
+		// (death camera included), not just the brief Spectating phase.  The
+		// target may be already due to respawn (e.g. ServerCycle <=
+		// SpectateDelay), in which case installing only at StartSpectating()
+		// would leave the banner on screen for a single tick.
+		// RespawnDelayHUDMessage does the swap on the owning client.
+		SetSpectatorOverlays(PC, true);
+	}
 
 	// Humans: lock respawns right away (see the Timer hold-off comment):
 	// DeathMatch.RestartPlayer() refuses to spawn a PRI flagged bOutOfLives,
@@ -690,10 +740,47 @@ function ClearRespawnLock(int i)
 }
 
 /**
+ * Ask the owning client to install or remove the spectator banner HUD and the
+ * beacon interaction.  Both live on the client (PlayerController.myHUD and
+ * Player.InteractionMaster are client-side objects), so assigning them here on
+ * the server would have no effect on a network client.  RespawnDelayHUDMessage
+ * is an invisible LocalMessage: ReceiveLocalizedMessage reaches the owning
+ * client reliably and its ClientReceive does the actual swap/attach there.
+ *
+ * bActive=false is the teardown pulse (Switch 0): the client restores the
+ * stock HUD it saved and detaches the beacon interaction.
+ */
+function SetSpectatorOverlays(PlayerController PC, bool bActive)
+{
+	local int Flags;
+
+	if ( PC == None || PC.bDeleteMe )
+		return;
+
+	if ( bActive )
+	{
+		Flags = 0;
+		if ( EnableBanner )
+			Flags = Flags + 1;
+		if ( EnableBeacons )
+			Flags = Flags + 2;
+		if ( Flags == 0 )
+			return;					// both features disabled: nothing to install
+	}
+	else
+	{
+		Flags = 0;					// teardown
+	}
+
+	PC.ReceiveLocalizedMessage(class'RespawnDelayHUDMessage', Flags);
+}
+
+/**
  * Vanilla spectator mode, exactly like UnrealPlayer.ServerSpectate() does for
  * Last Man Standing: 'Spectating' state, behind view, view a living player.
  * GameInfo.CanSpectate takes care of the restriction:
  *   team games -> own team members only, DM -> all players.
+ * Also activates the banner HUD and beacon interaction for waiting players.
  */
 function StartSpectating(PlayerController PC)
 {
@@ -724,6 +811,11 @@ function StartSpectating(PlayerController PC)
 	{
 		EnterFreeCam(PC, SpectateSpot(PC));
 	}
+
+	// Install the banner HUD and beacon interaction on the client. Sent after
+	// ClientGotoState so the client is already in 'Spectating' when the
+	// interaction attaches (ordered reliable channel).
+	SetSpectatorOverlays(PC, true);
 
 	PC.ClientMessage(MsgSpectateHint);
 }
@@ -964,6 +1056,8 @@ defaultproperties
 	AffectBots=True
 	AffectInvasion=False
 	AffectAssault=True
+	EnableBanner=True
+	EnableBeacons=True
 	RespGroup="Respawn Delay"
 	CycleDisplayText="Respawn wave cycle"
 	CycleDescText="Server wave cycle for team games: everyone dying within a wave respawns together at the end of the next one, and waits always span one to two cycles. Arena [3-6s]: continuous chaos, fast micro-batches. Standard [5-10s]: competitive balance. Methodic [10-20s]: methodical pushing waves. Strategic [15-30s]: large coordinated waves. Tactical [30-60s]: heavy combat simulation. Solo games use the selected cycle length as a plain wait, so waits are exactly 3s, 5s, 10s, 15s or 30s."
