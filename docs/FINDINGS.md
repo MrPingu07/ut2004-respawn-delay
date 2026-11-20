@@ -296,3 +296,100 @@ when `Level.Game.MaxLives <= 0 && !Level.Game.bOverTime` and falls back to the
   `DeathMatch.state PendingMatch.Timer` does `if (NumPlayers == 0)
   bWaitForNetPlayers = true;` every tick, regardless of `MinPlayers`/bots.
   So foreign-bot smoke tests must be done with a real client connected.
+  
+  Aquí tienes una versión bien detallada y autocontenida para `FINDINGS.md` y `APPROACH.md`, con las firmas exactas, líneas de código, índices de arrays, tablas de resolución y trampas del compilador, para que no tengas que volver a decompilar `Engine.u` ni `XInterface.u` nunca más.
+
+## 11. HUD font resolution table and Canvas state traps
+
+Verified directly against decompiled `Engine/HUD.uc` and `XInterface/HudBase.uc`
+via `UCC.exe batchexport`.
+
+### Font array hierarchy (`Engine.HUD` vs `XInterface.HudBase`)
+
+* `Engine.HUD` (lines 73–76) declares the storage arrays:
+  ```unrealscript
+  var localized string FontArrayNames[9];
+  var Font FontArrayFonts[9];
+  var int FontScreenWidthMedium[9];
+  var int FontScreenWidthSmall[9];
+
+```
+
+* In `Engine.HUD` `defaultproperties` (lines 941–949), all 9 slots
+(`FontArrayNames(0)` through `FontArrayNames(8)`) are initialized to
+`"Engine.DefaultFont"` as safe placeholders.
+* `XInterface.HudBase` overrides `FontArrayNames` in its own
+`defaultproperties` (lines 1049–1057) with the actual Eurostile HUD font
+ladder, ordered from largest (index `0`) to smallest (index `8`):
+
+| index | `FontArrayNames` value | role |
+| --- | --- | --- |
+| `0` | `"UT2003Fonts.FontEurostile37"` | huge (high-res headline) |
+| `1` | `"UT2003Fonts.FontEurostile29"` | extra large |
+| `2` | `"UT2003Fonts.FontEurostile24"` | large |
+| `3` | `"UT2003Fonts.FontEurostile21"` | medium-large |
+| `4` | `"UT2003Fonts.FontEurostile17"` | medium |
+| `5` | `"UT2003Fonts.FontEurostile14"` | normal |
+| `6` | `"UT2003Fonts.FontEurostile12"` | compact |
+| `7` | `"UT2003Fonts.FontEurostile9"` | small |
+| `8` | `"UT2003Fonts.FontSmallText"` | tiny |
+
+* `HudBase` also defines resolution breakpoints (`FontScreenWidthMedium[0..8]`
+at `2048, 1600, 1280, 1024, 800, 640, 512, 400, 320` and
+`FontScreenWidthSmall[0..8]` starting at `4096` down to `1280`, lines
+1058–1072) used by `HUD.GetMediumFontFor` / `GetMediumFont` (lines 823–845).
+
+### Resolution-aware lookup (`HUD.GetFontSizeIndex` and `HUD.LoadFont`)
+
+* `HUD.GetFontSizeIndex(Canvas C, int FontSize)` (`Engine/HUD.uc:805–821`)
+converts a relative `FontSize` offset into an array index (`0..8`) by
+adding `+1` for each horizontal resolution threshold (`C.ClipX`) crossed:
+```unrealscript
+function Font GetFontSizeIndex(Canvas C, int FontSize)
+{
+    if ( C.ClipX >= 512 )  FontSize++;
+    if ( C.ClipX >= 640 )  FontSize++;
+    if ( C.ClipX >= 800 )  FontSize++;
+    if ( C.ClipX >= 1024 ) FontSize++;
+    if ( C.ClipX >= 1280 ) FontSize++;
+    if ( C.ClipX >= 1600 ) FontSize++;
+
+    return LoadFont(Clamp(8 - FontSize, 0, 8));
+}
+
+```
+
+At `C.ClipX >= 1600` (all 6 thresholds met), passing `FontSize = 0` yields
+`8 - 6 = 2` (`FontEurostile24`), while `FontSize = 2` yields `8 - 8 = 0`
+(`FontEurostile37`). Calling `GetFontSizeIndex(C, 0)` scales cleanly with
+screen width across `640x480` through `1920x1080+`, whereas loading
+`"UT2003Fonts.FontEurostile37"` directly pins index `0` regardless of
+resolution.
+* `HUD.LoadFont(int i)` (`Engine/HUD.uc:764–773`) lazily populates
+`FontArrayFonts[i]` via `Font(DynamicLoadObject(FontArrayNames[i], class'Font'))`
+and caches the reference on the HUD instance (`LoadFontStatic(int i)` at
+lines 752–762 does the same on `default.FontArrayFonts[i]`).
+* `HudBase.PrecacheFonts(Canvas C)` (`XInterface/HudBase.uc:160–190`) draws
+dummy `"Aa1"` glyphs at `(0,0)` during initialization to force glyph texture
+uploads for indices `-2`, `-4`, and `MessageFontOffset + (0..3)`.
+
+### Shared `Canvas` state and compiler rules
+
+* **Canvas state leakage**: `Canvas` is a single mutable state machine shared
+across every HUD pass (`DrawHudPassA..D`, `DisplayLocalMessages`, custom
+interactions). `C.StrLen()` and `C.TextSize()` compute glyph dimensions
+using whatever `C.Font`, `C.FontScaleX`, and `C.FontScaleY` are currently
+active on `C`. If a preceding widget alters `C.FontScaleX/Y` or leaves a
+different font bound (or if `C.MedFont` is overridden), measuring text in
+one pass and drawing in another (or skipping explicit resets) causes text
+size oscillations between frames.
+* **Fix pattern**: Before every `StrLen` / `DrawText` block, explicitly assign
+`C.Font`, `C.FontScaleX`, and `C.FontScaleY` (e.g., resolving
+`GetFontSizeIndex(C, 0)` with a `DynamicLoadObject("UT2003Fonts.FontEurostile37", class'Font')`
+fallback).
+* **UnrealScript `local` scope constraint**: `ucc` strictly requires all
+`local` variable declarations at the very top of a function body before any
+executable statements or `if` blocks; declaring `local` inside a block
+aborts compilation with `Error, 'Local' is not allowed here`.
+
+```

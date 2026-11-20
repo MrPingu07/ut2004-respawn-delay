@@ -198,9 +198,29 @@ all waiting players see the same message in the same animation phase. The HUD
 swap itself is triggered from an invisible reliable `LocalMessage`, because
 `PlayerController.myHUD` and `Player.InteractionMaster` are client-side objects.
 
+
 The class-by-class protocol, token table, timing, replication details, config
 and failure modes are documented separately in
 [BROADCAST.md](BROADCAST.md).
+
+### HUD font resolution & deterministic Canvas state
+
+To prevent intermittent text scaling glitches across frames and resolutions,
+`RespawnDelayBannerHUD` avoids relying on inherited `Canvas` font/scale state
+(`C.MedFont` or leftover `C.FontScaleX` / `C.FontScaleY` from other HUD
+passes):
+
+* **Font lookup**: `RespawnDelayBannerHUD` inherits `GetFontSizeIndex(C, ...)`
+  and `FontArrayNames[0..8]` from `XInterface.HudBase`, where index `0` maps
+  to `UT2003Fonts.FontEurostile37` (the largest Eurostile HUD font; indices
+  `1..8` step down through `29, 24, 21, 17, 14, 12, 9` and `FontSmallText`).
+  The HUD resolves `GetFontSizeIndex(C, 0)` and falls back to
+  `Font(DynamicLoadObject("UT2003Fonts.FontEurostile37", class'Font'))` if
+  needed.
+* **Per-block isolation**: Every rendered block (top-center team score,
+  top-left match clock, and bottom typewriter banner) explicitly sets
+  `C.Font`, `C.FontScaleX`, and `C.FontScaleY` immediately before calling
+  `C.StrLen()` and `C.DrawText()`.
 
 ## Deliberate limitations (documented trade-offs)
 

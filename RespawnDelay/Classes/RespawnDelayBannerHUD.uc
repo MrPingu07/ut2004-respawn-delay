@@ -231,6 +231,7 @@ simulated function DrawBanner(Canvas C)
     local float TimeW, TimeY;
     local int Minutes, Seconds;
     local string TimeStr;
+    local font HugeFont;
 
     // Resolution-independent scaling (1024x768 as reference = scale 1.0)
     local float Scale;
@@ -333,42 +334,29 @@ simulated function DrawBanner(Canvas C)
         256, 128
     );
     C.Style = ERenderStyle.STY_Normal;
-    
-    // Team score counter + match time at top center - same font and scale as clock
+
+    HugeFont = GetFontSizeIndex(C, 0);
+    if (HugeFont == None)
+    {
+        HugeFont = Font(DynamicLoadObject("UT2003Fonts.FontEurostile37", class'Font'));
+    }
+
+    // Marcador de equipos arriba al centro
     if (bTeamGame && PlayerOwner != None && GRI != None && GRI.Teams[0] != None && GRI.Teams[1] != None)
     {
         RedScore = string(int(GRI.Teams[0].Score));
         BlueScore = string(int(GRI.Teams[1].Score));
 
+        if (HugeFont != None)
+        {
+            C.Font = HugeFont;
+        }
         C.FontScaleX = 1.0;
         C.FontScaleY = 1.0;
         C.StrLen("X", Dummy, PH);
 
-        TimeY = 15.0 * Scale;
+        TScoreY = 15.0 * Scale;
 
-        // Match time remaining (mm:ss) in white at top center
-        if (Level.Game != None && Level.Game.TimeLimit > 0)
-        {
-            Minutes = int((Level.Game.TimeLimit * 60.0 - Level.TimeSeconds) / 60.0);
-            Seconds = int((Level.Game.TimeLimit * 60.0 - Level.TimeSeconds)) % 60;
-            if (Minutes < 0) Minutes = 0;
-            if (Seconds < 0) Seconds = 0;
-            TimeStr = string(Minutes) $ ":" $ string(Seconds);
-            if (Seconds < 10) TimeStr = string(Minutes) $ ":0" $ string(Seconds);
-
-            C.StrLen(TimeStr, TimeW, Dummy);
-            C.SetDrawColor(255, 255, 255, 255);
-            C.SetPos((C.ClipX - TimeW) * 0.5, TimeY);
-            C.DrawText(TimeStr);
-
-            TScoreY = TimeY + PH + 4.0 * Scale;
-        }
-        else
-        {
-            TScoreY = TimeY;
-        }
-
-        // Centered score string: Red - Blue (same font & scale as clock)
         C.StrLen(RedScore, RedW, Dummy);
         C.StrLen(" - ", DashW, Dummy);
         C.StrLen(BlueScore, BlueW, Dummy);
@@ -376,29 +364,56 @@ simulated function DrawBanner(Canvas C)
         TTotalW = RedW + DashW + BlueW;
         TStartX = (C.ClipX - TTotalW) * 0.5;
 
-        //Red Score
         C.SetDrawColor(255, 80, 80, 255);
         C.SetPos(TStartX, TScoreY);
         C.DrawText(RedScore);
 
-        //Dash
         C.SetDrawColor(255, 255, 255, 255);
         C.SetPos(TStartX + RedW, TScoreY);
         C.DrawText(" - ");
 
-        //Blue score
         C.SetDrawColor(100, 150, 255, 255);
         C.SetPos(TStartX + RedW + DashW, TScoreY);
         C.DrawText(BlueScore);
     }
-    
-    // Typewriter + blinking cursor banner (centered, no horizontal motion)
-    
-    // Center text vertically in banner
-    C.Font = C.MedFont;
-    C.StrLen("X", Dummy, PH);  // PH = line height for MedFont
+
+    // Tiempo restante arriba a la izquierda
+    if (PlayerOwner != None && Level != None && Level.Game != None && Level.Game.TimeLimit > 0)
+    {
+        if (HugeFont != None)
+        {
+            C.Font = HugeFont;
+        }
+        C.FontScaleX = 1.0;
+        C.FontScaleY = 1.0;
+        C.StrLen("X", Dummy, PH);
+
+        TimeY = 15.0 * Scale;
+
+        Minutes = int((Level.Game.TimeLimit * 60.0 - Level.TimeSeconds) / 60.0);
+        Seconds = int((Level.Game.TimeLimit * 60.0 - Level.TimeSeconds)) % 60;
+        if (Minutes < 0) Minutes = 0;
+        if (Seconds < 0) Seconds = 0;
+        TimeStr = string(Minutes) $ ":" $ string(Seconds);
+        if (Seconds < 10) TimeStr = string(Minutes) $ ":0" $ string(Seconds);
+
+        C.StrLen(TimeStr, TimeW, Dummy);
+        C.SetDrawColor(255, 255, 255, 255);
+        C.SetPos(16.0 * Scale, TimeY);
+        C.DrawText(TimeStr);
+    }
+
+    // Banner con efecto typewriter
+    if (HugeFont != None)
+    {
+        C.Font = HugeFont;
+    }
+    C.FontScaleX = 0.8;
+    C.FontScaleY = 0.8;
+
+    C.StrLen("X", Dummy, PH);
     TextYPos = BannerY + (BannerHeight - PH) * 0.5;
-    
+
     // Shared broadcast first (identical text + phase for every waiting
     // player); the local feed is only a fallback for the tick before the
     // broadcast actor has replicated to this client.
@@ -414,16 +429,15 @@ simulated function DrawBanner(Canvas C)
         CycleElapsed = FMax(0.0, Level.TimeSeconds - CycleStart);
     }
     LastDrawTime = Level.TimeSeconds;
-    
+
     GetPhaseInfo(CycleElapsed, Phase, PhaseStart);
     PhaseTime = FMax(0.0, CycleElapsed - PhaseStart);
     CursorVisible = GetCursorVisible(PhaseTime, Phase);
-    
-    C.Font = C.MedFont;
+
     C.StrLen(CurrentMessage, FullWidth, PH);
     AnchorX = (C.ClipX - FullWidth) * 0.5;
     L = Len(CurrentMessage);
-    
+
     if (Phase == 2)
         Shown = Min(L, int(PhaseTime * L));
     else if (Phase == 7)
@@ -433,7 +447,7 @@ simulated function DrawBanner(Canvas C)
     else
         Shown = 0;
     Start = (L - Shown) / 2;
-    
+
     if (Shown > 0)
     {
         C.StrLen(Left(CurrentMessage, Start), SliceX, Dummy);
@@ -442,7 +456,7 @@ simulated function DrawBanner(Canvas C)
         C.SetPos(SliceX, TextYPos);
         C.DrawText(Mid(CurrentMessage, Start, Shown), false);
     }
-    
+
     if (CursorVisible)
     {
         C.StrLen(Left(CurrentMessage, Start + Shown), CursorX, Dummy);
@@ -454,6 +468,10 @@ simulated function DrawBanner(Canvas C)
         C.DrawTileStretched(material'InterfaceContent.SquareBoxA', 8.0 * Scale, PH);
         C.Style = OldStyle;
     }
+
+    // Restore default scale so later HUD draws are unaffected
+    C.FontScaleX = 1.0;
+    C.FontScaleY = 1.0;
 }
 
 /**
