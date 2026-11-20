@@ -4,7 +4,8 @@
 // Purpose-built HUD for players waiting to respawn in RespawnDelay.
 // Replaces the stock HUD while the player is in the spectator wait state
 // so we can draw a custom banner at the bottom with:
-// - Typewriter-animated broadcast messages (from RespawnDelayFeed)
+// - Typewriter-animated broadcast messages (server-authored by
+//   RespawnDelayBroadcast, local RespawnDelayFeed only as a fallback)
 // - Team-colored stripes (white in non-team modes)
 // - Unreal "U" logo at left
 // - Team score counter at top center (team games only)
@@ -15,12 +16,21 @@ class RespawnDelayBannerHUD extends XInterface.HudBase;
 const FLICKER_STEP = 0.1666667;
 const BLINK_INTERVAL = 0.5;
 /**
- * Respawn waits are short (3-10 s with the common presets), so unlike the
- * Director booth feed the banner must start typing immediately.  One message
- * per cycle: brief cursor blink, type over ~1 s, then hold until the cycle
- * restarts and a new message is picked.
+ * Fallback cycle length for the local feed.  The real broadcast cycle comes
+ * from RespawnDelayBroadcast.CycleLength.  Respawn waits are short (3-10 s
+ * with the common presets), so unlike the Director booth feed the banner must
+ * start typing immediately: brief cursor blink, type over ~1 s, then hold
+ * until the shared cycle restarts.
  */
 const TOTAL_CYCLE = 10.0;
+
+/**
+ * Server-authored broadcast state.  When present, CurrentMessage and the
+ * typewriter phase come from this actor, so every waiting player sees the same
+ * text at the same point in the animation.  The local fields below are only a
+ * fallback for the first tick before the actor replicates.
+ */
+var transient RespawnDelayBroadcast Broadcast;
 
 var transient float CycleStart;
 var transient float LastDrawTime;
@@ -130,6 +140,44 @@ simulated function DrawSpectatingHud(Canvas C)
 {
     DisplayLocalMessages(C);
     DrawBanner(C);
+}
+
+/**
+ * Locate the server broadcast actor.  It is spawned with bAlwaysRelevant, so
+ * every client has a copy.  Cached because AllActors every frame is wasteful.
+ */
+simulated function RespawnDelayBroadcast FindBroadcast()
+{
+    local RespawnDelayBroadcast B;
+
+    if (Broadcast != None && !Broadcast.bDeleteMe)
+        return Broadcast;
+
+    foreach AllActors(class'RespawnDelayBroadcast', B)
+    {
+        Broadcast = B;
+        break;
+    }
+
+    return Broadcast;
+}
+
+/**
+ * Feed the typewriter from the shared broadcast so the text and its animation
+ * phase are identical on every machine.  Returns false when the actor has not
+ * replicated to this client yet (the caller then uses the local fallback).
+ */
+simulated function bool GetBroadcastState(out float CycleElapsed)
+{
+    local RespawnDelayBroadcast B;
+
+    B = FindBroadcast();
+    if (B == None || B.CurrentText == "")
+        return false;
+
+    CurrentMessage = B.CurrentText;
+    CycleElapsed = B.GetCycleElapsed();
+    return true;
 }
 
 /**
@@ -340,16 +388,21 @@ simulated function DrawBanner(Canvas C)
     C.StrLen("X", Dummy, PH);  // PH = line height for MedFont
     TextYPos = BannerY + (BannerHeight - PH) * 0.5;
     
-    CycleElapsed = Level.TimeSeconds - CycleStart;
-    if (CurrentMessage == "" || CycleElapsed >= TOTAL_CYCLE
-        || Level.TimeSeconds - LastDrawTime > 0.5)
+    // Shared broadcast first (identical text + phase for every waiting
+    // player); the local feed is only a fallback for the tick before the
+    // broadcast actor has replicated to this client.
+    if ( !GetBroadcastState(CycleElapsed) )
     {
-        CycleStart = Level.TimeSeconds;
-        CurrentMessage = PickMessage();
-        log("RespawnDelay: banner message: " $ CurrentMessage, 'RespawnDelay');
+        if (CurrentMessage == "" || Level.TimeSeconds < CycleStart
+            || Level.TimeSeconds - CycleStart >= TOTAL_CYCLE
+            || Level.TimeSeconds - LastDrawTime > 0.5)
+        {
+            CycleStart = Level.TimeSeconds;
+            CurrentMessage = PickMessage();
+        }
+        CycleElapsed = FMax(0.0, Level.TimeSeconds - CycleStart);
     }
     LastDrawTime = Level.TimeSeconds;
-    CycleElapsed = Level.TimeSeconds - CycleStart;
     
     GetPhaseInfo(CycleElapsed, Phase, PhaseStart);
     PhaseTime = FMax(0.0, CycleElapsed - PhaseStart);
@@ -393,9 +446,10 @@ simulated function DrawBanner(Canvas C)
 }
 
 /**
- * Picks a message from the config feed (RespawnDelayFeed) and expands its
- * live-match tokens.  Falls back to the local class'RespawnDelayFeed'.default.Messages
- * only if no config messages are available.
+ * LOCAL FALLBACK feed.  Normally the banner draws RespawnDelayBroadcast, which
+ * is authored on the server and identical for every client.  This path is only
+ * used for the frame(s) before that actor replicates (and in the editor), so it
+ * intentionally mirrors the same rules.
  *
  * No message repeats until all have been shown. Empty entries are skipped.
  * Width is deliberately not filtered: token values vary in length, and the
@@ -409,12 +463,17 @@ simulated function string PickMessage()
     local array<string> SourceMessages;
     local int SourceCount;
     local bool bTeamGame;
+    local GameReplicationInfo GRI;
 
     // Team-only lines are meaningless in DM/LMS/etc.  The token expander still
     // blanks those tokens as a safety net, but skipping the whole line avoids
     // broadcasts like " ... DEFEND THE CORNER".
     bTeamGame = (PlayerOwner != None && PlayerOwner.Level != None
         && PlayerOwner.Level.Game != None && PlayerOwner.Level.Game.bTeamGame);
+
+    GRI = None;
+    if (PlayerOwner != None)
+        GRI = PlayerOwner.GameReplicationInfo;
 
     // Get messages from config (RespawnDelayFeed)
     SourceCount = class'RespawnDelayFeed'.default.Messages.Length;
@@ -460,7 +519,7 @@ simulated function string PickMessage()
         {
             if (!bTeamGame && class'RespawnDelayFeed'.static.HasTeamOnlyTokens(Msg))
                 continue;
-            return class'RespawnDelayFeed'.static.ExpandTokens(Msg, PlayerOwner);
+            return class'RespawnDelayFeed'.static.ExpandTokens(Msg, GRI, bTeamGame, Level);
         }
     }
 

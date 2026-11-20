@@ -151,6 +151,9 @@ AffectAssault=True
   works (verified against retail UnrealScript source) and what hooks exist.
 * [docs/APPROACH.md](docs/APPROACH.md) — design, edge cases, config reference,
   test checklist.
+* [docs/BROADCAST.md](docs/BROADCAST.md) — verbose banner/broadcast/beacon
+  protocol: HUD takeover, server-authored broadcast RI, token table, timing,
+  replication, config, failure modes.
 
 ## Notes on the previous attempt
 

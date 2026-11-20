@@ -21,7 +21,7 @@ CyclePresetText="3.000000;Arena [3-6s];5.000000;Standard [5-10s];10.000000;Metho
 
 ; -- Spectator banner & beacons --
 EnableBanner="Enable Spectator Banner"
-EnableBannerDesc="Show a typewriter-animated broadcast banner at the bottom of the screen while waiting to respawn. Displays match info, scores, and random tokens."
+EnableBannerDesc="Show a typewriter-animated broadcast banner at the bottom of the screen while waiting to respawn. The server authors one shared feed, so every waiting player sees the same message at the same animation phase. Displays match info, scores, and random tokens."
 EnableBeacons="Enable Spectator Beacons"
 EnableBeaconsDesc="Show team-colored beacons for living teammates (team games) or all players (solo) while spectating. White beacons in non-team modes."
 

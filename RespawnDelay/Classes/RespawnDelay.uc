@@ -199,6 +199,9 @@ var array<TWaitingPlayer>	Waiting;
 var bool					bIsAssault;		// running ASGameInfo
 var bool					bGameExcluded;	// the game manages respawns itself (Invasion, or Assault with AffectAssault=False)
 
+// server-authoritative banner broadcast, replicated to every client
+var RespawnDelayBroadcast	Broadcast;
+
 // ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
@@ -239,6 +242,16 @@ function PostBeginPlay()
 
 	// supervisor: 20 checks per second is plenty, the loops are trivial
 	SetTimer(0.05, true);
+
+	// Shared banner broadcast.  Authored once on the server so every waiting
+	// player sees the exact same text at the same animation phase, including
+	// players who die in the middle of a cycle.
+	if ( Role == ROLE_Authority && EnableBanner && Broadcast == None )
+	{
+		Broadcast = Spawn(class'RespawnDelayBroadcast', Self);
+		if ( Broadcast != None )
+			Broadcast.InitBroadcast();
+	}
 
 	log("RespawnDelay enabled ("$Level.Game$" team="$Level.Game.bTeamGame$")"
 		@"solo delay="$BaseDelay@"wave cycle="$ServerCycle, 'RespawnDelay');
@@ -626,6 +639,10 @@ function Timer()
 				RegisterDeath(B);
 		}
 	}
+
+	// --- 3) advance the shared banner broadcast ------------------------------
+	if ( Broadcast != None && !Broadcast.bDeleteMe )
+		Broadcast.UpdateBroadcast();
 }
 
 function int GetWaitingIndex(Controller C)

@@ -188,6 +188,20 @@ visible to the affected player. The initial "locked delay" notice and the
 spectator hint remain one-shot `ClientMessage`s (once per death, not per
 second). Toggle the whole feature with the `Countdown` config var.
 
+## Spectator banner broadcast
+
+While waiting, an optional replacement HUD draws a typewriter banner at the
+bottom of the screen and attaches custom team-coloured beacons; the existing
+centre-screen countdown keeps working in that HUD. The banner text is authored
+once by the server (`RespawnDelayBroadcast`) and replicated to every client, so
+all waiting players see the same message in the same animation phase. The HUD
+swap itself is triggered from an invisible reliable `LocalMessage`, because
+`PlayerController.myHUD` and `Player.InteractionMaster` are client-side objects.
+
+The class-by-class protocol, token table, timing, replication details, config
+and failure modes are documented separately in
+[BROADCAST.md](BROADCAST.md).
+
 ## Deliberate limitations (documented trade-offs)
 
 * **bForceRespawn=true** servers: the vanilla auto-respawn loop could fire
@@ -208,11 +222,17 @@ second). Toggle the whole feature with the `Countdown` config var.
 ```
 RespawnDelay/Classes/RespawnDelay.uc           the mutator
 RespawnDelay/Classes/RespawnDelayCountdown.uc  the HUD countdown LocalMessage
+RespawnDelay/Classes/RespawnDelayHUDMessage.uc client-side HUD/beacon hook
+RespawnDelay/Classes/RespawnDelayBannerHUD.uc  replacement HUD + banner rendering
+RespawnDelay/Classes/RespawnDelayBroadcast.uc  server-authored broadcast state
+RespawnDelay/Classes/RespawnDelayFeed.uc       message pool + token expansion
+RespawnDelay/Classes/RespawnDelayBeaconInteraction.uc  custom nameplates
 RespawnDelay/RespawnDelay.int                 registration + localized strings
 RespawnDelay/RespawnDelay.ucl                 mutator-list registration
 make.sh                                builds into the game dir via wine UCC make
 docs/FINDINGS.md                       engine research (with source references)
 docs/APPROACH.md                       this document
+docs/BROADCAST.md                      verbose banner/broadcast/beacon design
 ```
 
 ## Configuration (UT2004.ini `[RespawnDelay.RespawnDelay]`)
@@ -225,6 +245,8 @@ docs/APPROACH.md                       this document
 | `DeathCamTime` | 1.0 | vanilla death camera seconds before spectator mode |
 | `SpectateDelay` | 3.0 | seconds after death before spectator mode starts; spectating begins at `max(DeathCamTime, SpectateDelay)` so players stay in the death camera longer |
 | `Countdown` | True | per-second HUD countdown while waiting |
+| `EnableBanner` | True | bottom-screen broadcast banner and its server-authoritative feed; see [BROADCAST.md](BROADCAST.md) |
+| `EnableBeacons` | True | custom team-coloured beacons for living players while waiting |
 | `AffectBots` | True | apply the rules to bots as well |
 | `AffectInvasion` | False | apply delays in Invasion as well |
 | `AffectAssault` | True | take respawn authority in Assault (disables the vanilla reinforcement waves); False = hands-off in Assault |
