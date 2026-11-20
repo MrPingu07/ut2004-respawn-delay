@@ -16,13 +16,20 @@ class RespawnDelayBannerHUD extends XInterface.HudBase;
 const FLICKER_STEP = 0.1666667;
 const BLINK_INTERVAL = 0.5;
 /**
- * Fallback cycle length for the local feed.  The real broadcast cycle comes
- * from RespawnDelayBroadcast.CycleLength.  Respawn waits are short (3-10 s
- * with the common presets), so unlike the Director booth feed the banner must
- * start typing immediately: brief cursor blink, type over ~1 s, then hold
- * until the shared cycle restarts.
+ * Full broadcast cycle matching the Director booth feed (TeamDirector).
+ * 9 phases over 22 seconds:
+ *   0: flicker     0.0 - 1.0   cursor flicker (3 blinks, ends OFF)
+ *   1: blink       1.0 - 2.0   cursor blink (starts ON)
+ *   2: type        2.0 - 3.0   typewriter: text appears over ~1 s
+ *   3: blink       3.0 - 6.0   cursor blink during hold
+ *   4: hold        6.0 - 11.0  full text held; cursor OFF
+ *   5: flicker     11.0 - 12.0 cursor flicker before delete
+ *   6: blink       12.0 - 13.0 cursor blink before delete
+ *   7: delete      13.0 - 14.0 text deleted character by character
+ *   8: blink       14.0 - 17.0 cursor blink after delete
+ *   9: rest        17.0 - 22.0 empty; wait for next cycle
  */
-const TOTAL_CYCLE = 10.0;
+const TOTAL_CYCLE = 22.0;
 
 /**
  * Server-authored broadcast state.  When present, CurrentMessage and the
@@ -97,19 +104,22 @@ simulated function DrawCrosshair(Canvas C)
 // countdown once this HUD replaced the stock one.
 
 /**
- * Compressed timeline for a short respawn wait:
- *   0.00-0.30  cursor flicker
- *   0.30-0.55  cursor blink
- *   0.55-1.55  typewriter (the text is fully typed after ~1 s)
- *   1.55-10.0  hold
- * At 10 s the cycle restarts and PickMessage() chooses another line.
+ * Returns the current phase (0-9) and its start time for a given cycle time T.
+ * Phases: 0=flicker(0-1), 1=blink(1-2), 2=type(2-3), 3=blink(3-6), 4=hold(6-11),
+ *         5=flicker(11-12), 6=blink(12-13), 7=delete(13-14), 8=blink(14-17), 9=rest(17-22).
  */
 simulated function GetPhaseInfo(float T, out int Phase, out float PhaseStart)
 {
-    if (T < 0.30)      { Phase = 0; PhaseStart = 0.00; }
-    else if (T < 0.55) { Phase = 1; PhaseStart = 0.30; }
-    else if (T < 1.55) { Phase = 2; PhaseStart = 0.55; }
-    else               { Phase = 3; PhaseStart = 1.55; }
+    if (T < 1.0)       { Phase = 0; PhaseStart = 0.0;  }
+    else if (T < 2.0)  { Phase = 1; PhaseStart = 1.0;  }
+    else if (T < 3.0)  { Phase = 2; PhaseStart = 2.0;  }
+    else if (T < 6.0)  { Phase = 3; PhaseStart = 3.0;  }
+    else if (T < 11.0) { Phase = 4; PhaseStart = 6.0;  }
+    else if (T < 12.0) { Phase = 5; PhaseStart = 11.0; }
+    else if (T < 13.0) { Phase = 6; PhaseStart = 12.0; }
+    else if (T < 14.0) { Phase = 7; PhaseStart = 13.0; }
+    else if (T < 17.0) { Phase = 8; PhaseStart = 14.0; }
+    else               { Phase = 9; PhaseStart = 17.0; }
 }
 
 /**

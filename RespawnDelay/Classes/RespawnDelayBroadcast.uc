@@ -25,7 +25,7 @@
 class RespawnDelayBroadcast extends ReplicationInfo;
 
 /** Length of one banner message cycle.  Must match the HUD's constant. */
-const TOTAL_CYCLE = 10.0;
+const TOTAL_CYCLE = 22.0;
 
 /** Finished (already expanded) line every client must draw. */
 var string CurrentText;

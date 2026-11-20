@@ -18,7 +18,12 @@ While a human player is waiting out a RespawnDelay respawn, the mutator can:
 1. **Replace the stock HUD** with `RespawnDelayBannerHUD`.
 2. **Draw a broadcast banner** at the bottom of the screen. The text is authored
    once by the server and replicated to every client, so all waiting players
-   see the same message in the same animation phase.
+   see the same message in the same animation phase. **This live feed is an
+   effective broadcast system fully synchronized for all players in the server:
+   the server picks one message, expands tokens once, and replicates the
+   finished string plus a cycle timestamp. Every waiting player (and even
+   players who die mid-cycle) draws the identical text at the identical typewriter
+   phase, like a radio feed tuned to the same station.**
 3. **Draw custom beacons** over living players (`RespawnDelayBeaconInteraction`),
    team-coloured in team games and white in solo modes.
 4. **Keep the existing centre-screen countdown** (`RespawnDelayCountdown`)
@@ -188,7 +193,7 @@ if (Role == ROLE_Authority && EnableBanner && Broadcast == None)
 ```
 
 `InitBroadcast()` sets `CycleStart = Level.TimeSeconds`, stores
-`CycleLength = TOTAL_CYCLE` (10 s), reads `bTeamGame`, and selects the first
+`CycleLength = TOTAL_CYCLE` (22 s), reads `bTeamGame`, and selects the first
 message.
 
 ### 6.2 Cycle advance
@@ -396,18 +401,27 @@ waiting player's own team; non-team modes are always white.
 
 ### 8.4 Animation
 
-`TOTAL_CYCLE = 10.0` is divided into a short typing window and a long hold:
+`TOTAL_CYCLE = 22.0` (matching the TeamDirector booth feed) is divided into a
+full typewriter + delete cycle with holding periods:
 
 | time | phase | behaviour |
 |---|---|---|
-| 0.00–0.30 s | 0 | cursor flicker |
-| 0.30–0.55 s | 1 | cursor blink |
-| 0.55–1.55 s | 2 | typewriter: text appears over ~1 s |
-| 1.55–10.0 s | 3 | full text held; cursor off |
+| 0.0–1.0 s | 0 | cursor flicker (3 blinks, ends OFF) |
+| 1.0–2.0 s | 1 | cursor blink |
+| 2.0–3.0 s | 2 | typewriter: text appears over ~1 s |
+| 3.0–6.0 s | 3 | cursor blink during hold |
+| 6.0–11.0 s | 4 | full text held; cursor OFF |
+| 11.0–12.0 s | 5 | cursor flicker (pre-delete) |
+| 12.0–13.0 s | 6 | cursor blink (pre-delete) |
+| 13.0–14.0 s | 7 | delete: text removed character by character |
+| 14.0–17.0 s | 8 | cursor blink (post-delete) |
+| 17.0–22.0 s | 9 | rest: empty, waiting for next cycle |
 
-At 10 s the shared cycle advances and a new message replaces the old one. The
-timeline is intentionally compressed compared with TeamDirector's booth feed
-because respawn waits are typically 3–10 seconds.
+At 22 s the shared cycle advances and a new message replaces the old one. The
+full typewriter + delete animation ensures the banner behaves like a
+professional broadcast ticker: text types in, holds for readability, then
+deletes out before the next message. This matches the TeamDirector booth feed
+timing exactly.
 
 The text is centred and clipped by the canvas. No width filtering or scrolling
 is applied; token values such as player and server names vary legitimately.
@@ -493,7 +507,7 @@ tokens are skipped automatically in solo games.
 ### 10.3 Cycle length
 
 The broadcast cycle is the `TOTAL_CYCLE` constant in
-`RespawnDelayBroadcast.uc` (10.0 s). The banner HUD has the same constant for
+`RespawnDelayBroadcast.uc` (22.0 s). The banner HUD has the same constant for
 its local fallback; keep the two in sync when changing it.
 
 ---
@@ -545,7 +559,7 @@ If the client shows install/restore lines but no banner:
 
 ## 13. Known limitations
 
-* **Content is a 10-second snapshot.** Scores, clock and `$RANDOM` values stay
+* **Content is a 22-second snapshot.** Scores, clock and `$RANDOM` values stay
   fixed for the cycle, which is what keeps the typewriter stable.
 * **Late joiners start the current message at phase 0.** They align on the next
   cycle boundary. A player who was already connected and then dies mid-cycle
@@ -560,7 +574,7 @@ If the client shows install/restore lines but no banner:
   normal broadcast path; only the one-frame fallback uses local config.
 * **The broadcast runs even when nobody is waiting.** This keeps one continuous
   schedule so a newly dying player joins mid-cycle. It costs one message
-  selection every ten seconds.
+  selection every 22 seconds.
 
 ---
 
