@@ -8,7 +8,9 @@
 // - Team games: living teammates only
 // - Solo/non-team games: all living players (white beacons)
 // Format: Name / HP [X] / Shield [X] - team-colored, centered.
-// No line-of-sight check: spectators see through walls like the Director.
+// Line-of-sight check: beacons only show when the teammate is actually visible
+// (PlayerController.Trace from camera to pawn's head; blocked by world geometry
+// and actors).
 //=============================================================================
 class RespawnDelayBeaconInteraction extends Interaction;
 
@@ -70,7 +72,7 @@ event PostRender(Canvas C)
     local PlayerReplicationInfo PRI;
     local Controller Ctr;
     local Pawn P;
-    local vector CamLoc, Head, Screen;
+    local vector CamLoc, Head, Screen, HitLoc, HitNorm;
     local Rotator CamRot;
     local float XL, YL, LineH;
     local color TeamColor;
@@ -82,6 +84,7 @@ event PostRender(Canvas C)
     local int i;
     local int PRICount;
     local GameReplicationInfo GRI;
+    local Actor HitActor;
 
     Super.PostRender(C);
 
@@ -146,6 +149,14 @@ event PostRender(Canvas C)
 
         // Skip anything behind the camera.
         if ((Head - CamLoc) Dot vector(CamRot) <= 0.0)
+            continue;
+
+        // Line-of-sight check: trace from camera to pawn's head.
+        // PC.Trace returns the hit actor if blocked, None if clear.
+        // We check world geometry and actors (True), with zero extent (point trace).
+        HitActor = PC.Trace(HitLoc, HitNorm, Head, CamLoc, True, vect(0,0,0));
+        // If we hit something that's not the pawn itself or its controller, LOS is blocked.
+        if (HitActor != None && HitActor != P && HitActor != Ctr)
             continue;
 
         Screen = C.WorldToScreen(Head);
