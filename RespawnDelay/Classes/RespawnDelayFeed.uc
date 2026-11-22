@@ -83,14 +83,33 @@ static function string ExpandTokens(string Msg, GameReplicationInfo GRI,
 
     Top = FindTopPlayer(GRI, -1);
 
-    // Longest tokens first.
+    // Longest tokens first: $TOPTEAMFRAGGER contains $TOPFRAGGER as a substring,
+    // so $TOPTEAM* must be expanded before $TOPFRAGGER.
     if (Top == None)
     {
+        ReplaceText(Msg, "$TOPTEAMNAME", FALLBACK_TEAM);
+        ReplaceText(Msg, "$TOPTEAMSHORT", FALLBACK_TEAM);
+        ReplaceText(Msg, "$TOPTEAMFRAGGER", FALLBACK_NAME);
         ReplaceText(Msg, "$TOPFRAGGERSCORE", FALLBACK_SCORE);
         ReplaceText(Msg, "$TOPFRAGGER", FALLBACK_NAME);
     }
     else
     {
+        // $TOPTEAM* tokens: the team of the global scoreboard leader.
+        // These are viewer-agnostic (not "my team") and valid in any team mode.
+        if (Top.Team != None)
+        {
+            ReplaceText(Msg, "$TOPTEAMNAME", GetTeamNameByIndex(GRI, Top.Team.TeamIndex));
+            ReplaceText(Msg, "$TOPTEAMSHORT", GetTeamShortNameByIndex(GRI, Top.Team.TeamIndex));
+            ReplaceText(Msg, "$TOPTEAMFRAGGER", GetPlayerName(FindTopPlayer(GRI, Top.Team.TeamIndex)));
+        }
+        else
+        {
+            ReplaceText(Msg, "$TOPTEAMNAME", FALLBACK_TEAM);
+            ReplaceText(Msg, "$TOPTEAMSHORT", FALLBACK_TEAM);
+            ReplaceText(Msg, "$TOPTEAMFRAGGER", FALLBACK_NAME);
+        }
+
         ReplaceText(Msg, "$TOPFRAGGERSCORE", string(int(Top.Score)));
         ReplaceText(Msg, "$TOPFRAGGER", Top.PlayerName);
     }
