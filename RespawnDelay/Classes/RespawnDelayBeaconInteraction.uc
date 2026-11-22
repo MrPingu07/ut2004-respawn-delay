@@ -112,10 +112,12 @@ event PostRender(Canvas C)
     // Resolution-independent scale factor (1024x768 as reference = scale 1.0)
     Scale = C.ClipY / 768.0;
 
-    C.FontScaleX = 1.0;
-    C.FontScaleY = 1.0;
+    // Scale font too so text size tracks resolution
     if (C.SmallFont != None)
         C.Font = C.SmallFont;
+    C.FontScaleX = Scale;
+    C.FontScaleY = Scale;
+
     C.StrLen("Mg", XL, YL);
     if (YL < 10.0 * Scale)
         YL = 12.0 * Scale;
