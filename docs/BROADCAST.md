@@ -218,7 +218,8 @@ capped at eight skipped cycles, after which the clock is re-anchored.
 
 `AdvanceMessage()` runs on the server only and:
 
-1. Reads `class'RespawnDelayFeed'.default.Messages` (the server's config).
+1. Reads the merged feed: `RespawnDelayFeed` plus, when installed,
+   `MutTechDirector.DirectorFeed` (see §7.1). Exact duplicate lines are removed.
 2. Rebuilds and reshuffles a no-repeat bag when the source length changes or
    the bag empties.
 3. Skips empty entries.
@@ -283,8 +284,15 @@ Messages=$SERVERNAME
 `Messages` is a dynamic string array: use repeated bare `Messages=` keys, not
 `Messages(0)=...`.
 
-The client-side fallback feed reads the same section, but in the normal path the
-text always comes from the server's replicated `CurrentText`.
+When the MutTechDirector mutator is installed, its
+`[MutTechDirector.DirectorFeed]` entries are appended to this list. The sibling
+class is loaded with `DynamicLoadObject` and read through `GetPropertyText`, so
+RespawnDelay has no compile-time dependency on MutTechDirector. Exact duplicate
+lines (compared case-insensitively) are removed, with RespawnDelay's own lines
+kept first.
+
+The client-side fallback feed reads the same merged list, but in the normal path
+the text always comes from the server's replicated `CurrentText`.
 
 ### 7.2 Viewer-agnostic semantics
 

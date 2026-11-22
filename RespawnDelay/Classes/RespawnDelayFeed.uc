@@ -15,6 +15,10 @@
 // Do not use Messages(0)=... here; that form is for static arrays and is
 // ignored by the dynamic-array config reader.
 //
+// When MutTechDirector is installed, its [MutTechDirector.DirectorFeed]
+// messages are merged into this feed at runtime. The sibling class is loaded
+// dynamically, so this package compiles and runs without MutTechDirector.
+//
 // All token expansion happens ONCE on the server, against replicated match
 // state (GameReplicationInfo and its PRI/Team arrays), and the finished string
 // is broadcast through RespawnDelayBroadcast so every client sees the exact
@@ -26,9 +30,8 @@ class RespawnDelayFeed extends Object
 
 var config array<string> Messages;
 
-// Fallback config section name for MutTechDirector compatibility.
+// Optional sibling feed class for MutTechDirector compatibility.
 const MUT_TECH_DIRECTOR_FEED_CLASS = "MutTechDirector.DirectorFeed";
-const MUT_TECH_DIRECTOR_FEED_SECTION = "MutTechDirector.DirectorFeed";
 
 // Fallbacks keep every token non-empty so a message never collapses because
 // a value is unavailable (no GRI yet, warmup, empty board, etc.).
@@ -580,35 +583,128 @@ static function string FormatClock(int Seconds)
  * Order: RespawnDelayFeed messages first, then DirectorFeed messages appended.
  * Both sections use the same token syntax ($TOPFRAGGER, $MAPNAME, $RANDOM...).
  * The function also normalises the legacy %RANDOM prefix to $RANDOM.
+ *
+ * Exact duplicates (case-insensitive) are dropped, preserving first-seen
+ * order, so the no-repeat bag does not show the same text twice just because
+ * both inis ship it.
+ *
+ * The sibling class is loaded dynamically rather than referenced directly:
+ * MutTechDirector may not be installed, and this keeps the two packages from
+ * forming a compile-time cycle.
  */
 static function array<string> GetMergedFeedMessages()
 {
     local array<string> Out;
+    local array<string> Own;
     local array<string> Extra;
-    local int i, Count, ExtraCount;
+    local int i;
+
+    Own = class'RespawnDelayFeed'.default.Messages;
+    for (i = 0; i < Own.Length; i++)
+        AppendUniqueMessage(Out, Own[i]);
+
+    Extra = LoadOtherFeedMessages();
+    for (i = 0; i < Extra.Length; i++)
+        AppendUniqueMessage(Out, Extra[i]);
+
+    return Out;
+}
+
+/**
+ * Read MutTechDirector's config-backed Messages array at runtime, or an empty
+ * list when the package is absent.  A throwaway instance exposes the loaded
+ * config defaults through GetPropertyText().
+ */
+static function array<string> LoadOtherFeedMessages()
+{
+    local array<string> Out;
+    local array<string> Raw;
+    local class<Object> FeedClass;
     local Object FeedObj;
+    local string Text;
+    local int i;
 
-    // Primary feed (RespawnDelay.ini -> [RespawnDelay.RespawnDelayFeed])
-    Count = class'RespawnDelayFeed'.default.Messages.Length;
-    Out.Length = Count;
-    for (i = 0; i < Count; i++)
-        Out[i] = class'RespawnDelayFeed'.default.Messages[i];
+    FeedClass = class<Object>(DynamicLoadObject(MUT_TECH_DIRECTOR_FEED_CLASS, class'Class', true));
+    if (FeedClass == None)
+        return Out;
 
-    // Optional secondary feed (MutTechDirector.ini -> [MutTechDirector.DirectorFeed])
-    // We can't use config() on a different class at runtime, so we try to load the
-    // MutTechDirector.DirectorFeed class and read its default.Messages if it exists.
-    FeedObj = DynamicLoadObject(MUT_TECH_DIRECTOR_FEED_CLASS, class'Class');
-    if (FeedObj != None)
+    FeedObj = new(None) FeedClass;
+    if (FeedObj == None)
+        return Out;
+
+    Text = FeedObj.GetPropertyText("Messages");
+    Raw = ParseMessagesText(Text);
+    for (i = 0; i < Raw.Length; i++)
+        AppendUniqueMessage(Out, Raw[i]);
+
+    return Out;
+}
+
+/**
+ * Append Msg unless an equal (case-insensitive) non-empty line is already in
+ * List.  Caps() matches the case folding ExpandTokens applies to the banner.
+ */
+static function bool AppendUniqueMessage(out array<string> List, string Msg)
+{
+    local int i;
+    local string Key;
+
+    if (Msg == "")
+        return False;
+
+    Key = Caps(Msg);
+    for (i = 0; i < List.Length; i++)
     {
-        Extra = class'MutTechDirector.DirectorFeed'.default.Messages;
-        ExtraCount = Extra.Length;
-        if (ExtraCount > 0)
-        {
-            Out.Length = Count + ExtraCount;
-            for (i = 0; i < ExtraCount; i++)
-                Out[Count + i] = Extra[i];
-        }
+        if (Caps(List[i]) == Key)
+            return False;
     }
+
+    List.Length = List.Length + 1;
+    List[List.Length - 1] = Msg;
+    return True;
+}
+
+/**
+ * Parse the string form of a dynamic string array produced by GetPropertyText:
+ *
+ *     ("first line","second line","third line")
+ *
+ * Array export uses quoted elements separated by ",".  A quote inside a line
+ * is not escaped by the exporter, so a literal "," inside a message would be
+ * ambiguous; the shipped feeds contain no such line.
+ */
+static function array<string> ParseMessagesText(string Text)
+{
+    local array<string> Out;
+    local string Item;
+    local int Pos;
+
+    if (Left(Text, 1) == "(")
+        Text = Mid(Text, 1);
+    if (Right(Text, 1) == ")")
+        Text = Left(Text, Len(Text) - 1);
+
+    while (Text != "")
+    {
+        if (Left(Text, 1) == "\"")
+            Text = Mid(Text, 1);
+
+        Pos = InStr(Text, "\",\"");
+        if (Pos < 0)
+        {
+            if (Right(Text, 1) == "\"")
+                Text = Left(Text, Len(Text) - 1);
+            Out.Length = Out.Length + 1;
+            Out[Out.Length - 1] = Text;
+            break;
+        }
+
+        Item = Left(Text, Pos);
+        Out.Length = Out.Length + 1;
+        Out[Out.Length - 1] = Item;
+        Text = Mid(Text, Pos + 3);
+    }
+
     return Out;
 }
 

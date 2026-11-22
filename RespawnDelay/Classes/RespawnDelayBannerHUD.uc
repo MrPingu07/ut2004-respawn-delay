@@ -648,16 +648,10 @@ simulated function string PickMessage()
     if (PlayerOwner != None)
         GRI = PlayerOwner.GameReplicationInfo;
 
-    // Get messages from config (RespawnDelayFeed)
-    SourceCount = class'RespawnDelayFeed'.default.Messages.Length;
-    if (SourceCount > 0)
-    {
-        SourceMessages = class'RespawnDelayFeed'.default.Messages;
-    }
-    else
-    {
-        SourceCount = 0;
-    }
+    // Get messages from the merged config feed (RespawnDelay.ini plus, when
+    // installed, MutTechDirector's DirectorFeed; duplicates removed).
+    SourceMessages = class'RespawnDelayFeed'.static.GetMergedFeedMessages();
+    SourceCount = SourceMessages.Length;
 
     if (SourceCount == 0)
         return "RESPAWN DELAY ACTIVE";
