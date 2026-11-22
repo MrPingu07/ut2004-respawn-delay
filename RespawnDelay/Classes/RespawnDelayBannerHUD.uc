@@ -33,9 +33,10 @@ const TOTAL_CYCLE = 22.0;
 
 /**
  * Characters per banner line before wrapping.  Lines break at the last space
- * at or before this position so words are never split.
+ * at or before this position so words are never split.  Reduced from 70 to 60
+ * because the Unreal Tournament logo on the left takes up horizontal space.
  */
-const FEED_WRAP_CHARS = 70;
+const FEED_WRAP_CHARS = 60;
 
 /**
  * Server-authored broadcast state.  When present, CurrentMessage and the
@@ -237,6 +238,11 @@ simulated function DrawBanner(Canvas C)
     local int Pos, Remaining, LineLen, NextPos, ScanIdx;
     local float TotalHeight, LineY, LineW, PrefixW;
 
+    // Text layout accounting for the Unreal Tournament logo on the left.
+    local float TextLeftMargin;   // X where text area starts (logo right edge)
+    local float TextAreaWidth;    // Usable width from logo edge to screen right
+    local float TextCenterX;      // Center of the text area
+
     // Team score counter locals
     local GameReplicationInfo GRI;
     local string RedScore, BlueScore;
@@ -348,6 +354,12 @@ simulated function DrawBanner(Canvas C)
         256, 128
     );
     C.Style = ERenderStyle.STY_Normal;
+
+    // Text area starts at the logo's right edge and extends to the screen's right edge.
+    // The feed is centered within this area, not the full screen.
+    TextLeftMargin = LogoX + LogoSize * 2.0;
+    TextAreaWidth = C.ClipX - TextLeftMargin;
+    TextCenterX = TextLeftMargin + TextAreaWidth * 0.5;
 
     HugeFont = GetFontSizeIndex(C, 0);
     if (HugeFont == None)
@@ -543,7 +555,7 @@ simulated function DrawBanner(Canvas C)
         if (SegEnd > SegStart)
         {
             C.StrLen(Lines[LineIdx], LineW, Dummy);
-            LineW = (C.ClipX - LineW) * 0.5;
+            LineW = TextCenterX - LineW * 0.5;
             C.StrLen(Left(Lines[LineIdx], SegStart - LineStart), PrefixW, Dummy);
             C.SetDrawColor(TeamColor.R, TeamColor.G, TeamColor.B, 255);
             C.SetPos(LineW + PrefixW, LineY);
@@ -589,7 +601,7 @@ simulated function DrawBanner(Canvas C)
             SegStart = LineEnd - LineStart;
 
         C.StrLen(Lines[CursorLine], LineW, Dummy);
-        LineW = (C.ClipX - LineW) * 0.5;
+        LineW = TextCenterX - LineW * 0.5;
         C.StrLen(Left(Lines[CursorLine], SegStart), PrefixW, Dummy);
         CursorX = LineW + PrefixW;
 

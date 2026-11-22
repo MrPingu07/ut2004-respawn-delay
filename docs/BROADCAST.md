@@ -384,7 +384,7 @@ Scaling uses `Scale = C.ClipY / 768.0` (1024×768 is the 1.0 reference).
 | dark band | full width, `80 * Scale` tall, anchored to the bottom, black at alpha 204 |
 | top/bottom stripes | `3 * Scale` tall |
 | Unreal logo | `LastManStanding.LMSLogoSmall`, `BannerHeight + 16*Scale` tall, `8*Scale` above the band |
-| message | `FontEurostile17` at `0.8 * Scale`, word-wrapped at the last space before 70 characters, each line centred horizontally, whole block centred vertically, team colour |
+| message | `FontEurostile17` at `0.8 * Scale`, word-wrapped at the last space before 60 characters, each line centred horizontally in the area right of the Unreal logo, whole block centred vertically, team colour |
 | team score counter | team games only, top centre, 2× font, red/blue |
 | match clock | team games only, above the score |
 
@@ -405,14 +405,17 @@ would keep its absolute pixel size and become proportionally smaller. A fixed
 `FontEurostile17` scaled by `0.8 * Scale` keeps the feed the same size relative
 to the banner at every resolution.
 
-Messages longer than `FEED_WRAP_CHARS` (70) are word-wrapped into additional
-lines. The break is the last space at or before the 70-character limit, so a
+Messages longer than `FEED_WRAP_CHARS` (60) are word-wrapped into additional
+lines. The break is the last space at or before the 60-character limit, so a
 word is never split; only a single word longer than the limit falls back to a
-hard break. The complete line block is measured first, then centred vertically
-between the top and bottom stripes, so a two-line message sits in the middle of
-the band rather than being anchored to one edge. Each line is centred
-horizontally, and the typewriter reveal and delete phases operate on the
-wrapped layout in place.
+hard break. The limit was reduced from 70 because the Unreal Tournament logo on
+the left occupies horizontal space; the text area starts at the logo's right
+edge and extends to the screen's right edge. The complete line block is measured
+first, then centred vertically between the top and bottom stripes, so a
+two-line message sits in the middle of the band rather than being anchored to
+one edge. Each line is centred horizontally **within the text area** (right of
+the logo), and the typewriter reveal and delete phases operate on the wrapped
+layout in place.
 
 ### 8.4 Animation
 

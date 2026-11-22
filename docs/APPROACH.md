@@ -225,8 +225,9 @@ passes):
   `0.8 * (C.ClipY / 768.0)` rather than `GetFontSizeIndex()`. The resolution
   ladder caps out at 1600 px, so the feed would otherwise shrink relative to
   the screen on larger displays. Messages word-wrap at the last space before
-  the 70-character limit, and the resulting line block is centred between the
-  banner stripes.
+  the 60-character limit (reduced because the Unreal logo on the left takes up
+  space), and the resulting line block is centred between the banner stripes.
+  Each line is centred in the area to the right of the logo.
 
 ## Deliberate limitations (documented trade-offs)
 
