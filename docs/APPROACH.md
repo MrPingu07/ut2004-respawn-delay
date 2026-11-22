@@ -90,7 +90,21 @@ The mutator (`RespawnDelay.RespawnDelay`) runs a **supervisor** on its own
      / `CheckEndGame()` read `bOutOfLives` to decide the match is over, so a
      temporary lock could look like a full wipe. The chosen power node is kept
      by Onslaught for the scheduled spawn.
-   * FIRE cycles **living** player views; `TeamGame.CanSpectate` limits
+
+### Spectator bypass fix (v2.6.0)
+
+The original implementation cleared `bOutOfLives` when the player entered
+spectator mode. This created an exploit: a waiting player could open the menu,
+go spectator, then click "Join Game" to respawn immediately \u2014
+`DeathMatch.RestartPlayer()` would allow it because `bOutOfLives` had been
+cleared.
+
+The fix keeps `bOutOfLives=true` while the player is in the waiting queue,
+regardless of spectator state. The `bOutOfLives` flag is only temporarily
+cleared for the *scheduled* respawn at `RespawnAt`, and restored if the
+spawn fails. This closes the "go spectator -> Join Game" bypass while
+preserving vanilla spectator behaviour.
+     * FIRE cycles **living** player views; `TeamGame.CanSpectate` limits
      players to their own team, DM allows everybody. The supervisor filters
      out dead targets (the engine's own cycle does not), and when FIRE lands
      on a corpse it advances to the next living player. If the player being

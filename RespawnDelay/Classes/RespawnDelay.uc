@@ -615,8 +615,8 @@ function Timer()
 			continue;
 		if ( C.PlayerReplicationInfo.bOnlySpectator )
 			continue;
-		if ( C.PlayerReplicationInfo.bOutOfLives )
-			continue;
+		// Do NOT skip on bOutOfLives: the engine sets it on death, but we need
+		// to register the death if they are not already in our waiting list.
 		if ( C.Pawn != None )
 			continue;
 		if ( GetWaitingIndex(C) >= 0 )
