@@ -356,10 +356,10 @@ simulated function DrawBanner(Canvas C)
     C.Style = ERenderStyle.STY_Normal;
 
     // Text area starts at the logo's right edge and extends to the screen's right edge.
-    // The feed is centered within this area, not the full screen.
+    // The feed is centered within this area, then shifted left by 50px for better visual balance.
     TextLeftMargin = LogoX + LogoSize * 2.0;
     TextAreaWidth = C.ClipX - TextLeftMargin;
-    TextCenterX = TextLeftMargin + TextAreaWidth * 0.5;
+    TextCenterX = TextLeftMargin + TextAreaWidth * 0.5 - 50.0 * Scale;
 
     HugeFont = GetFontSizeIndex(C, 0);
     if (HugeFont == None)

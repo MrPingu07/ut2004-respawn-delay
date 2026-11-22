@@ -152,7 +152,8 @@ static function bool HasTeamOnlyTokens(string Msg)
 
     U = Caps(Msg);
 
-    return (InStr(U, "$LEADTEAM") >= 0)
+    return (InStr(U, "$TOPTEAM") >= 0)
+        || (InStr(U, "$LEADTEAM") >= 0)
         || (InStr(U, "$REDVAL") >= 0)
         || (InStr(U, "$BLUEVAL") >= 0);
 }
