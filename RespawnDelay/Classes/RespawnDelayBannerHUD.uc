@@ -257,6 +257,8 @@ simulated function DrawBanner(Canvas C)
     local float Scale;
     
     Scale = C.ClipY / 768.0;
+    if (Scale < 1.0)
+        Scale = 1.0;
     
     // Don't draw our custom banner if no valid player owner
     if (PlayerOwner == None)

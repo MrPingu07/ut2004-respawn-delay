@@ -110,7 +110,10 @@ event PostRender(Canvas C)
     bTeamGame = (PC.Level != None && PC.Level.Game != None && PC.Level.Game.bTeamGame);
 
     // Resolution-independent scale factor (1024x768 as reference = scale 1.0)
+    // Clamp at 1.0 for resolutions below 768p so text stays readable
     Scale = C.ClipY / 768.0;
+    if (Scale < 1.0)
+        Scale = 1.0;
 
     // Scale font too so text size tracks resolution
     if (C.SmallFont != None)
