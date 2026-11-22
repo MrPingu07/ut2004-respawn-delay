@@ -535,9 +535,12 @@ function Timer()
 		if ( PC.IsInState('Spectating') )
 		{
 			// Spectating means the death-camera hold-off is over (either we
-			// moved the player there or FIRE -> ServerSpectate() did): the
-			// temporary out-of-lives lock must not block the scheduled spawn.
-			ClearRespawnLock(i);
+			// moved the player there or FIRE -> ServerSpectate() did).
+			// We deliberately do NOT call ClearRespawnLock here: keeping
+			// bOutOfLives=true blocks manual "Join Game" clicks while the
+			// respawn timer is still running. The scheduled respawn below
+			// will temporarily clear it for the actual RestartPlayer() call.
+			// ClearRespawnLock(i);  <-- removed to fix spectator bypass
 
 			// Dead players are not spectator targets: keep the camera in
 			// freecam at the death spot / skip to a living player.
@@ -550,21 +553,21 @@ function Timer()
 			{
 				Waiting[i].LastAttempt	= Level.TimeSeconds;
 				Waiting[i].Tries		+= 1;
+
+				// Temporarily clear bOutOfLives for the scheduled respawn only.
+				// If RestartPlayer fails (no spawn spot, etc.), we restore the
+				// lock so the player stays in the queue and the timer retries.
+				PC.PlayerReplicationInfo.bOutOfLives = false;
 				if ( Level.Game.PlayerCanRestart(PC) )
 				{
-					// Network-critical: state 'Spectating' has ClientRestart in
-					// its ignores list, so a client still sitting in Spectating
-					// silently swallows the ClientRestart() the respawn sends
-					// - it never leaves the spectator view (stuck until the
-					// viewed pawn dies) and never re-syncs its weapon (no
-					// viewmodel in first person). Leave Spectating on the
-					// CLIENT first: ClientGotoState and the later ClientRestart
-					// ride the same reliable channel and are applied in order,
-					// so the hand-over works. Same pairing the engine itself
-					// uses (RestartPlayer failure path, AskForPawn()).
 					PC.ClientGotoState('PlayerWalking', 'Begin');
 					Level.Game.RestartPlayer(PC);
 				}
+
+				// If the respawn didn't actually give us a pawn, put the lock back.
+				if ( PC.Pawn == None )
+					PC.PlayerReplicationInfo.bOutOfLives = true;
+
 				// entry is dropped automatically once PC.Pawn != None
 
 				// respawn keeps failing (must join before start, ...):
