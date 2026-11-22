@@ -32,6 +32,12 @@ const BLINK_INTERVAL = 0.5;
 const TOTAL_CYCLE = 22.0;
 
 /**
+ * Characters per banner line before wrapping.  Lines break at the last space
+ * at or before this position so words are never split.
+ */
+const FEED_WRAP_CHARS = 70;
+
+/**
  * Server-authored broadcast state.  When present, CurrentMessage and the
  * typewriter phase come from this actor, so every waiting player sees the same
  * text at the same point in the animation.  The local fields below are only a
@@ -219,19 +225,27 @@ simulated function DrawBanner(Canvas C)
     // Typewriter + cursor locals
     local float CycleElapsed, PhaseStart, PhaseTime;
     local int Phase, L, Shown, Start;
-    local float FullWidth, AnchorX, SliceX, CursorX, PH, Dummy;
+    local float CursorX, PH, Dummy;
     local bool CursorVisible;
     local byte OldStyle;
+
+    // Wrapped feed lines: centred as one block between the banner stripes.
+    local array<string> Lines;
+    local array<int> LineStarts;
+    local int NumLines, LineIdx, LineStart, LineEnd, SegStart, SegEnd;
+    local int CursorLine, CursorPos;
+    local int Pos, Remaining, LineLen, NextPos, ScanIdx;
+    local float TotalHeight, LineY, LineW, PrefixW;
 
     // Team score counter locals
     local GameReplicationInfo GRI;
     local string RedScore, BlueScore;
     local float RedW, BlueW, DashW, TScoreY, TTotalW, TStartX;
-    local HUD MyHUD;
     local float TimeW, TimeY;
     local int Minutes, Seconds;
     local string TimeStr;
     local font HugeFont;
+    local font FeedFont;
 
     // Resolution-independent scaling (1024x768 as reference = scale 1.0)
     local float Scale;
@@ -404,15 +418,21 @@ simulated function DrawBanner(Canvas C)
     }
 
     // Banner con efecto typewriter
-    if (HugeFont != None)
+    // Use a fixed base font and scale it with the screen, rather than the
+    // resolution-aware HUD font ladder: the feed keeps the same size relative
+    // to the banner at every resolution instead of shrinking as the screen
+    // grows past the largest font breakpoint.
+    FeedFont = Font(DynamicLoadObject("UT2003Fonts.FontEurostile17", class'Font'));
+    if (FeedFont == None)
+        FeedFont = HugeFont;
+    if (FeedFont != None)
     {
-        C.Font = HugeFont;
+        C.Font = FeedFont;
     }
-    C.FontScaleX = 0.8;
-    C.FontScaleY = 0.8;
+    C.FontScaleX = 0.8 * Scale;
+    C.FontScaleY = 0.8 * Scale;
 
     C.StrLen("X", Dummy, PH);
-    TextYPos = BannerY + (BannerHeight - PH) * 0.5;
 
     // Shared broadcast first (identical text + phase for every waiting
     // player); the local feed is only a fallback for the tick before the
@@ -434,9 +454,72 @@ simulated function DrawBanner(Canvas C)
     PhaseTime = FMax(0.0, CycleElapsed - PhaseStart);
     CursorVisible = GetCursorVisible(PhaseTime, Phase);
 
-    C.StrLen(CurrentMessage, FullWidth, PH);
-    AnchorX = (C.ClipX - FullWidth) * 0.5;
     L = Len(CurrentMessage);
+
+    // Word-wrap the feed at the last space at or before FEED_WRAP_CHARS, so
+    // words stay intact.  A single word longer than the limit falls back to a
+    // hard break.  LineStarts keeps the original string offsets so the
+    // typewriter phase still reveals characters in place.
+    Lines.Length = 0;
+    LineStarts.Length = 0;
+    Pos = 0;
+    while (Pos < L)
+    {
+        // A wrapped line never begins with the spaces that caused the break.
+        while (Pos < L && Mid(CurrentMessage, Pos, 1) == " ")
+            Pos++;
+        if (Pos >= L)
+            break;
+
+        Remaining = L - Pos;
+        if (Remaining <= FEED_WRAP_CHARS)
+        {
+            LineLen = Remaining;
+            NextPos = L;
+        }
+        else
+        {
+            ScanIdx = -1;
+            for (LineIdx = Pos + FEED_WRAP_CHARS - 1; LineIdx >= Pos; LineIdx--)
+            {
+                if (Mid(CurrentMessage, LineIdx, 1) == " ")
+                {
+                    ScanIdx = LineIdx;
+                    break;
+                }
+            }
+
+            if (ScanIdx > Pos)
+            {
+                LineLen = ScanIdx - Pos;
+                NextPos = ScanIdx + 1;
+            }
+            else
+            {
+                // No usable space: break the over-long word at the limit.
+                LineLen = FEED_WRAP_CHARS;
+                NextPos = Pos + FEED_WRAP_CHARS;
+            }
+        }
+
+        Lines.Length = Lines.Length + 1;
+        LineStarts.Length = LineStarts.Length + 1;
+        Lines[Lines.Length - 1] = Mid(CurrentMessage, Pos, LineLen);
+        LineStarts[LineStarts.Length - 1] = Pos;
+        Pos = NextPos;
+    }
+
+    if (Lines.Length < 1)
+    {
+        Lines.Length = 1;
+        LineStarts.Length = 1;
+        Lines[0] = "";
+        LineStarts[0] = 0;
+    }
+    NumLines = Lines.Length;
+
+    TotalHeight = NumLines * PH;
+    TextYPos = BannerY + (BannerHeight - TotalHeight) * 0.5;
 
     if (Phase == 2)
         Shown = Min(L, int(PhaseTime * L));
@@ -448,23 +531,72 @@ simulated function DrawBanner(Canvas C)
         Shown = 0;
     Start = (L - Shown) / 2;
 
-    if (Shown > 0)
+    for (LineIdx = 0; LineIdx < NumLines; LineIdx++)
     {
-        C.StrLen(Left(CurrentMessage, Start), SliceX, Dummy);
-        SliceX += AnchorX;
-        C.SetDrawColor(TeamColor.R, TeamColor.G, TeamColor.B, 255);
-        C.SetPos(SliceX, TextYPos);
-        C.DrawText(Mid(CurrentMessage, Start, Shown), false);
+        LineStart = LineStarts[LineIdx];
+        LineEnd = LineStart + Len(Lines[LineIdx]);
+        LineY = TextYPos + LineIdx * PH;
+
+        // Portion of this line inside the centre-out reveal window.
+        SegStart = Max(Start, LineStart);
+        SegEnd = Min(Start + Shown, LineEnd);
+        if (SegEnd > SegStart)
+        {
+            C.StrLen(Lines[LineIdx], LineW, Dummy);
+            LineW = (C.ClipX - LineW) * 0.5;
+            C.StrLen(Left(Lines[LineIdx], SegStart - LineStart), PrefixW, Dummy);
+            C.SetDrawColor(TeamColor.R, TeamColor.G, TeamColor.B, 255);
+            C.SetPos(LineW + PrefixW, LineY);
+            C.DrawText(Mid(CurrentMessage, SegStart, SegEnd - SegStart), false);
+        }
     }
 
     if (CursorVisible)
     {
-        C.StrLen(Left(CurrentMessage, Start + Shown), CursorX, Dummy);
-        CursorX += AnchorX;
+        CursorPos = Start + Shown;
+
+        // At a line boundary the cursor belongs to the end of the line just
+        // revealed; when nothing is revealed it marks the next character.
+        CursorLine = -1;
+        for (LineIdx = 0; LineIdx < NumLines; LineIdx++)
+        {
+            LineStart = LineStarts[LineIdx];
+            LineEnd = LineStart + Len(Lines[LineIdx]);
+            if (Shown > 0)
+            {
+                if (CursorPos <= LineEnd)
+                {
+                    CursorLine = LineIdx;
+                    break;
+                }
+            }
+            else if (CursorPos < LineEnd)
+            {
+                CursorLine = LineIdx;
+                break;
+            }
+        }
+        if (CursorLine < 0)
+            CursorLine = NumLines - 1;
+
+        LineStart = LineStarts[CursorLine];
+        LineEnd = LineStart + Len(Lines[CursorLine]);
+        LineY = TextYPos + CursorLine * PH;
+        SegStart = CursorPos - LineStart;
+        if (SegStart < 0)
+            SegStart = 0;
+        if (SegStart > LineEnd - LineStart)
+            SegStart = LineEnd - LineStart;
+
+        C.StrLen(Lines[CursorLine], LineW, Dummy);
+        LineW = (C.ClipX - LineW) * 0.5;
+        C.StrLen(Left(Lines[CursorLine], SegStart), PrefixW, Dummy);
+        CursorX = LineW + PrefixW;
+
         OldStyle = C.Style;
         C.Style = ERenderStyle.STY_Alpha;
         C.SetDrawColor(TeamColor.R, TeamColor.G, TeamColor.B, 255);
-        C.SetPos(CursorX, TextYPos);
+        C.SetPos(CursorX, LineY);
         C.DrawTileStretched(material'InterfaceContent.SquareBoxA', 8.0 * Scale, PH);
         C.Style = OldStyle;
     }

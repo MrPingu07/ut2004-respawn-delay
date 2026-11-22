@@ -221,6 +221,12 @@ passes):
   top-left match clock, and bottom typewriter banner) explicitly sets
   `C.Font`, `C.FontScaleX`, and `C.FontScaleY` immediately before calling
   `C.StrLen()` and `C.DrawText()`.
+* **Feed size**: The banner message uses fixed `FontEurostile17` scaled by
+  `0.8 * (C.ClipY / 768.0)` rather than `GetFontSizeIndex()`. The resolution
+  ladder caps out at 1600 px, so the feed would otherwise shrink relative to
+  the screen on larger displays. Messages word-wrap at the last space before
+  the 70-character limit, and the resulting line block is centred between the
+  banner stripes.
 
 ## Deliberate limitations (documented trade-offs)
 

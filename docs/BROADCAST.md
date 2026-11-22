@@ -384,7 +384,7 @@ Scaling uses `Scale = C.ClipY / 768.0` (1024×768 is the 1.0 reference).
 | dark band | full width, `80 * Scale` tall, anchored to the bottom, black at alpha 204 |
 | top/bottom stripes | `3 * Scale` tall |
 | Unreal logo | `LastManStanding.LMSLogoSmall`, `BannerHeight + 16*Scale` tall, `8*Scale` above the band |
-| message | `MedFont`, centred horizontally and vertically, team colour |
+| message | `FontEurostile17` at `0.8 * Scale`, word-wrapped at the last space before 70 characters, each line centred horizontally, whole block centred vertically, team colour |
 | team score counter | team games only, top centre, 2× font, red/blue |
 | match clock | team games only, above the score |
 
@@ -398,6 +398,21 @@ Team colours:
 
 The stripe uses the viewed living target's team when available, otherwise the
 waiting player's own team; non-team modes are always white.
+
+The message deliberately does **not** use `GetFontSizeIndex()`: that HUD font
+ladder stops growing past the 1600 px breakpoint, so on larger screens the feed
+would keep its absolute pixel size and become proportionally smaller. A fixed
+`FontEurostile17` scaled by `0.8 * Scale` keeps the feed the same size relative
+to the banner at every resolution.
+
+Messages longer than `FEED_WRAP_CHARS` (70) are word-wrapped into additional
+lines. The break is the last space at or before the 70-character limit, so a
+word is never split; only a single word longer than the limit falls back to a
+hard break. The complete line block is measured first, then centred vertically
+between the top and bottom stripes, so a two-line message sits in the middle of
+the band rather than being anchored to one edge. Each line is centred
+horizontally, and the typewriter reveal and delete phases operate on the
+wrapped layout in place.
 
 ### 8.4 Animation
 
