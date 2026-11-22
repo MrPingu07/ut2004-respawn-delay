@@ -86,6 +86,9 @@ event PostRender(Canvas C)
     local GameReplicationInfo GRI;
     local Actor HitActor;
 
+    // Resolution-independent scaling (1024x768 as reference = scale 1.0)
+    local float Scale;
+
     Super.PostRender(C);
 
     if (PC == None || PC.bDeleteMe || PC.Pawn != None)
@@ -106,14 +109,17 @@ event PostRender(Canvas C)
 
     bTeamGame = (PC.Level != None && PC.Level.Game != None && PC.Level.Game.bTeamGame);
 
+    // Resolution-independent scale factor (1024x768 as reference = scale 1.0)
+    Scale = C.ClipY / 768.0;
+
     C.FontScaleX = 1.0;
     C.FontScaleY = 1.0;
     if (C.SmallFont != None)
         C.Font = C.SmallFont;
     C.StrLen("Mg", XL, YL);
-    if (YL < 10.0)
-        YL = 12.0;
-    LineH = YL + 2.0;
+    if (YL < 10.0 * Scale)
+        YL = 12.0 * Scale;
+    LineH = YL + 2.0 * Scale;
 
     C.GetCameraLocation(CamLoc, CamRot);
 
